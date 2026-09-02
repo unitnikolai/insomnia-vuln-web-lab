@@ -1,0 +1,11 @@
+# generated attack-box password — never commit this
+.env
+
+# your own binaries/scripts dropped in for the attack box — keep the repo
+# reproducible, not a binary dump; ship these separately (scp) per deploy
+tools/*
+!tools/.gitkeep
+
+# stray local clones if someone runs the crAPI/Vulhub steps inside this folder
+crAPI/
+vulhub/

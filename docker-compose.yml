@@ -1,0 +1,100 @@
+networks:
+  vulnbench:
+    driver: bridge
+
+services:
+
+  # --- The ONLY service meant to be reachable from the internet. A full
+  #     browser-based Kali desktop (real Firefox + nmap/sqlmap/Burp/terminal)
+  #     served over its own HTTPS on :6901 (self-signed cert — that's fine,
+  #     click through the warning). Demo attendees log in here and attack
+  #     the targets below *from inside this container*, using its internal
+  #     Docker DNS names (http://dvwa, http://juice-shop, etc.) — the targets
+  #     themselves never get a public port.
+  attack-box:
+    image: kasmweb/kali-rolling-desktop:1.17.0
+    container_name: vb-attack-box
+    restart: unless-stopped
+    shm_size: "512m"
+    user: root   # matches upstream's recommended run command; avoids permission
+                 # friction for tools (nmap SYN scans, custom binaries) that need it
+    environment:
+      - VNC_PW=${ATTACK_BOX_PASSWORD:?run ./up.sh first, or set ATTACK_BOX_PASSWORD in .env}
+    ports:
+      - "6901:6901"     # intentionally public — everything else below is not
+    volumes:
+      # Drop your own binaries/scripts into ./tools on the VPS host — they
+      # show up at /opt/tools inside the desktop immediately, no rebuild or
+      # restart needed. chmod +x on the host before running.
+      - ./tools:/opt/tools
+    networks: [vulnbench]
+
+  # --- Broadest single-app coverage: XSS, SQLi/NoSQLi, IDOR, JWT/crypto
+  #     flaws, SSRF, XXE, prototype pollution, business logic, ~100 challenges,
+  #     built-in scoreboard at /#/score-board for benchmarking progress.
+  juice-shop:
+    image: bkimminich/juice-shop
+    container_name: vb-juice-shop
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [vulnbench]
+
+  # --- Classic OWASP Top 10 with adjustable difficulty (low/medium/high/
+  #     impossible) via DVWA Security setting — good for scanner regression
+  #     testing across severity tiers. First run: open the app, click
+  #     "Create / Reset Database". Default creds admin/password.
+  dvwa:
+    image: vulnerables/web-dvwa
+    container_name: vb-dvwa
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:80"
+    networks: [vulnbench]
+
+  # --- Very wide breadth (OWASP Top 10 2007-2021 combined), including
+  #     older/rarer bug classes DVWA doesn't cover (LDAP injection, HTML5
+  #     vulns, click-jacking variants, DNS lookup abuse, etc).
+  mutillidae:
+    image: citizenstig/nowasp
+    container_name: vb-mutillidae
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:80"
+    networks: [vulnbench]
+
+  # --- API-specific: BOLA/IDOR, excessive data exposure, mass assignment,
+  #     broken object property level auth, JWT weaknesses — OWASP API Top 10.
+  vampi:
+    image: erev0s/vampi:latest
+    container_name: vb-vampi
+    restart: unless-stopped
+    environment:
+      - VULNERABLE=1
+    ports:
+      - "127.0.0.1:3003:5000"
+    networks: [vulnbench]
+
+  # --- GraphQL-specific: introspection abuse, batching/DoS via query depth,
+  #     injection through resolvers — a category most generic scanners miss.
+  dvga:
+    image: dolevf/dvga
+    container_name: vb-dvga
+    restart: unless-stopped
+    environment:
+      - WEB_HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:3004:5013"
+    networks: [vulnbench]
+
+  # --- Guided lessons incl. Java insecure deserialization, XXE, SSRF,
+  #     path traversal, JWT. Path is /WebGoat and /WebWolf once up.
+  webgoat:
+    image: webgoat/webgoat-8.0
+    container_name: vb-webgoat
+    restart: unless-stopped
+    command: ["/home/webgoat/start.sh"]
+    ports:
+      - "127.0.0.1:3005:8080"
+      - "127.0.0.1:3006:9090"
+    networks: [vulnbench]
