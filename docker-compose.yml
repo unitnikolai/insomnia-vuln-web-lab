@@ -15,19 +15,22 @@ services:
   #     Docker DNS names (http://dvwa, http://juice-shop, etc.) — the targets
   #     themselves never get a public port.
   attack-box:
-    # This project only ships "-rolling-daily" tags (no stable "latest") and
-    # prunes old ones — if this pull ever 404s, check current tags at
-    # https://hub.docker.com/r/kasmweb/kali-rolling-desktop/tags and bump it.
-    image: kasmweb/kali-rolling-desktop:1.18.0-rolling-daily
+    # Built locally (see attack-box.Dockerfile) so nmap/tcpdump/etc. get
+    # cap_net_raw baked onto the binaries — the desktop session runs as a
+    # non-root user internally regardless of `user: root` below, so a plain
+    # base-image pull can't do real raw-socket scans (SYN scans, etc.).
+    # If the base image pull in the Dockerfile ever 404s, check current tags
+    # at https://hub.docker.com/r/kasmweb/kali-rolling-desktop/tags.
+    build:
+      context: .
+      dockerfile: attack-box.Dockerfile
     container_name: vb-attack-box
     restart: unless-stopped
     shm_size: "512m"
     user: root
-    privileged: true   # full host-level capabilities + device access, by request —
-                        # this is the internet-facing container, so a compromise of
-                        # it (Kasm CVE, malicious demo attendee finding an escape)
-                        # is now realistically a full VPS compromise, not a contained
-                        # one. Snapshot/rebuild the VPS periodically given this.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     environment:
       - VNC_PW=${ATTACK_BOX_PASSWORD:?run ./up.sh first, or set ATTACK_BOX_PASSWORD in .env}
     ports:

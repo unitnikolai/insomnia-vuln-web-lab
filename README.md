@@ -70,13 +70,43 @@ in-desktop terminal:
 /opt/tools/my-tool
 ```
 
-The container runs as root and shares the `vulnbench` network, so the binary
-can reach targets by name (`http://dvwa`, `http://juice-shop:3000`, etc.) same
-as anything else launched from the desktop. If it's a Linux binary built
-elsewhere, match the container's architecture (`uname -m` inside the desktop
-first — it's likely `x86_64` unless your VPS is ARM) and statically link it
-(or ship its shared-library deps alongside it) since the image won't have your
-build environment's libc/libraries.
+The container itself runs as root and shares the `vulnbench` network, so the
+binary can reach targets by name (`http://dvwa`, `http://juice-shop:3000`,
+etc.) same as anything else launched from the desktop. Note: the *interactive
+terminal session* inside the desktop actually runs as Kasm's own non-root
+`kasm_user` regardless of the container's root setting (see 1c below) — if
+your binary needs raw sockets, apply the same `setcap` treatment to it. If
+it's a Linux binary built elsewhere, match the container's architecture
+(`uname -m` inside the desktop first — it's likely `x86_64` unless your VPS is
+ARM) and statically link it (or ship its shared-library deps alongside it)
+since the image won't have your build environment's libc/libraries.
+
+## 1c. Full raw-socket capability (SYN scans, packet crafting, etc.)
+
+Kasm's desktop images run the actual desktop/terminal session as an internal
+`kasm_user`, not root — so even with `user: root` and Docker's default
+capabilities on the container, `nmap -sS`, ARP tooling, and anything else
+needing `CAP_NET_RAW` fails from the in-browser terminal, and `sudo` isn't
+configured for that user either.
+
+**Already baked in for a fresh deploy:** `attack-box.Dockerfile` runs `setcap`
+on `nmap`, `tcpdump`, `hping3`, `arping`, and `masscan` at build time, so they
+work at full capability from any user inside the container. `up.sh` builds
+this automatically (`docker compose` picks up the `build:` section).
+
+**For a binary you drop into `tools/`,** or if a container is already running
+and you don't want to rebuild, do it live from the VPS host — this bypasses
+Kasm's user-switching entirely by exec'ing in as root directly:
+
+```bash
+docker exec -u root vb-attack-box setcap cap_net_raw,cap_net_admin+eip /opt/tools/my-tool
+```
+
+This only persists for the life of the current container (it's a change to
+the writable layer) — a `down.sh`/`up.sh` cycle rebuilds from the Dockerfile
+and loses it again for anything not listed there. Add your own binary's name
+to the `for bin in ...` loop in `attack-box.Dockerfile` if you want it to
+survive teardown/rebuild automatically.
 
 ## 2. What attendees do
 
@@ -170,12 +200,6 @@ ssh -N -D 1080 user@vps-ip
   (RCE'd, corrupted DB) is a snapshot-restore away instead of a rebuild.
 - Use `./up.sh --hours N` for actual public demos so the window closes itself
   even if you forget to run `down.sh`.
-- **`attack-box` runs `privileged: true`** — full host capabilities and device
-  access, on the one container that's internet-facing. A compromise of it is
-  now realistically a full VPS compromise, not a contained one. Given that:
-  treat the VPS itself as disposable (snapshot before demos, rebuild after
-  anything that looked like a real compromise rather than trusting it's still
-  clean), and don't reuse this VPS for anything unrelated.
 
 ## Optional: automated scoring
 
