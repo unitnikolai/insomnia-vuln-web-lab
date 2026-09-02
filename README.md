@@ -170,6 +170,12 @@ ssh -N -D 1080 user@vps-ip
   (RCE'd, corrupted DB) is a snapshot-restore away instead of a rebuild.
 - Use `./up.sh --hours N` for actual public demos so the window closes itself
   even if you forget to run `down.sh`.
+- **`attack-box` runs `privileged: true`** — full host capabilities and device
+  access, on the one container that's internet-facing. A compromise of it is
+  now realistically a full VPS compromise, not a contained one. Given that:
+  treat the VPS itself as disposable (snapshot before demos, rebuild after
+  anything that looked like a real compromise rather than trusting it's still
+  clean), and don't reuse this VPS for anything unrelated.
 
 ## Optional: automated scoring
 

@@ -22,8 +22,12 @@ services:
     container_name: vb-attack-box
     restart: unless-stopped
     shm_size: "512m"
-    user: root   # matches upstream's recommended run command; avoids permission
-                 # friction for tools (nmap SYN scans, custom binaries) that need it
+    user: root
+    privileged: true   # full host-level capabilities + device access, by request —
+                        # this is the internet-facing container, so a compromise of
+                        # it (Kasm CVE, malicious demo attendee finding an escape)
+                        # is now realistically a full VPS compromise, not a contained
+                        # one. Snapshot/rebuild the VPS periodically given this.
     environment:
       - VNC_PW=${ATTACK_BOX_PASSWORD:?run ./up.sh first, or set ATTACK_BOX_PASSWORD in .env}
     ports:
