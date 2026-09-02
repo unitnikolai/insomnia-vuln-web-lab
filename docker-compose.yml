@@ -1,6 +1,9 @@
 networks:
   vulnbench:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.1.0/24   # fixed range so it's predictable across redeploys
 
 services:
 
