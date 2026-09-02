@@ -12,7 +12,10 @@ services:
   #     Docker DNS names (http://dvwa, http://juice-shop, etc.) — the targets
   #     themselves never get a public port.
   attack-box:
-    image: kasmweb/kali-rolling-desktop:1.17.0
+    # This project only ships "-rolling-daily" tags (no stable "latest") and
+    # prunes old ones — if this pull ever 404s, check current tags at
+    # https://hub.docker.com/r/kasmweb/kali-rolling-desktop/tags and bump it.
+    image: kasmweb/kali-rolling-desktop:1.18.0-rolling-daily
     container_name: vb-attack-box
     restart: unless-stopped
     shm_size: "512m"
@@ -90,10 +93,9 @@ services:
   # --- Guided lessons incl. Java insecure deserialization, XXE, SSRF,
   #     path traversal, JWT. Path is /WebGoat and /WebWolf once up.
   webgoat:
-    image: webgoat/webgoat-8.0
+    image: webgoat/webgoat
     container_name: vb-webgoat
     restart: unless-stopped
-    command: ["/home/webgoat/start.sh"]
     ports:
       - "127.0.0.1:3005:8080"
       - "127.0.0.1:3006:9090"
