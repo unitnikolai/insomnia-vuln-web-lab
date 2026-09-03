@@ -33,6 +33,11 @@ services:
       - NET_RAW
     environment:
       - VNC_PW=${ATTACK_BOX_PASSWORD:?run ./up.sh first, or set ATTACK_BOX_PASSWORD in .env}
+      # Firefox's content-process sandbox tries clone(CLONE_NEWUSER), which
+      # Docker's default seccomp profile (and newer Ubuntu hosts' AppArmor
+      # userns restriction) blocks — this skips just that sandbox layer
+      # rather than loosening the whole container's seccomp/AppArmor.
+      - MOZ_DISABLE_CONTENT_SANDBOX=1
     ports:
       - "6901:6901"     # intentionally public — everything else below is not
     volumes:
