@@ -30,7 +30,7 @@ echo "   password:           ${PASS}"
 echo "   (browser will warn about the self-signed cert — that's expected)"
 echo
 echo " Targets are reachable only from INSIDE the attack box, by name:"
-docker compose config --services | grep -v attack-box | sed 's/^/   http:\/\//'
+docker compose config --services | grep -vE '^(attack-box|gate)$' | sed 's/^/   http:\/\//'
 echo "======================================================================"
 echo
 

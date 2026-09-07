@@ -1,11 +1,15 @@
 # vuln-lab — pentest benchmark targets (VPS deployment)
 
-**Architecture:** one public entry point (`attack-box` — a browser-based Kali
-desktop on :6901), everything else internal-only. Demo attendees log into the
-attack box in their browser and run their tools *from inside it*, reaching
-targets by Docker DNS name on the internal `vulnbench` network. The vulnerable
-targets themselves never get a public port — they can't be scanned or hit
-directly from the internet, only from inside the attack box.
+**Architecture:** one public entry point (`gate` — a single-slot access queue
+on :6901) in front of `attack-box` (a browser-based Kali desktop), everything
+else internal-only. `attack-box` is one shared X session, not one container
+per attendee, so `gate` lets in one visitor at a time and holds everyone else
+in a waiting room — two people driving the same desktop at once just fight
+over the mouse and can crash it under concurrent load. Whoever's admitted logs
+into the attack box in their browser and runs their tools *from inside it*,
+reaching targets by Docker DNS name on the internal `vulnbench` network. The
+vulnerable targets themselves never get a public port — they can't be scanned
+or hit directly from the internet, only from inside the attack box.
 
 Treat this VPS as hostile while the fleet runs: several targets (WebGoat,
 Vulhub CVEs) contain real, working RCE. Keeping them off the public internet
@@ -112,10 +116,16 @@ survive teardown/rebuild automatically.
 
 1. Browser → `https://<vps-ip>:6901`, click through the self-signed-cert
    warning (expected — it's Kasm's own cert, not a real CA).
-2. Log in with the password `up.sh` printed.
-3. Inside the desktop: Firefox for the web-UI targets, a terminal with
+2. If someone else is already in, they land on a waiting-room page showing
+   their queue position — it polls automatically and forwards them the
+   moment they're admitted, no action needed.
+3. Once admitted: log in with the password `up.sh` printed.
+4. Inside the desktop: Firefox for the web-UI targets, a terminal with
    nmap/sqlmap/nikto/gobuster/curl/etc. for everything else.
-4. Targets are reachable by container name from inside the desktop:
+5. Closing the tab (or a 45-minute hard cap, or ~30s of never actually
+   connecting after being admitted) frees the slot for the next person in
+   line automatically.
+6. Targets are reachable by container name from inside the desktop:
 
 | App        | URL (from inside the attack box) | Covers                                                 |
 |------------|-----------------------------------|---------------------------------------------------------|
@@ -189,9 +199,10 @@ ssh -N -D 1080 user@vps-ip
 
 ## Isolation checklist
 
-- Only `attack-box` publishes a non-loopback port (`6901`). Every target's
-  `ports:` entry (if any) must stay prefixed `127.0.0.1:` or be absent
-  entirely — this includes crAPI and any Vulhub CVE you bring up.
+- Only `gate` publishes a non-loopback port (`6901`); `attack-box` itself is
+  loopback-only now and reached only via `gate` over the internal network.
+  Every target's `ports:` entry (if any) must stay prefixed `127.0.0.1:` or
+  be absent entirely — this includes crAPI and any Vulhub CVE you bring up.
 - `./status.sh` after every `up.sh` — confirms only 22/6901 are listening.
 - Rotate the attack-box password before each public demo (`rm .env`).
 - Keep SSH hardened: key-based auth only (`PasswordAuthentication no`), and

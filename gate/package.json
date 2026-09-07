@@ -1,0 +1,15 @@
+{
+  "name": "vb-gate",
+  "version": "1.0.0",
+  "description": "Single-slot access queue in front of the attack-box (Kasm) desktop",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "http-proxy": "^1.18.1"
+  }
+}

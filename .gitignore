@@ -9,3 +9,6 @@ tools/*
 # stray local clones if someone runs the crAPI/Vulhub steps inside this folder
 crAPI/
 vulhub/
+
+# gate service — installed in its Docker build, not needed in the repo
+gate/node_modules/

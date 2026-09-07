@@ -7,13 +7,16 @@ networks:
 
 services:
 
-  # --- The ONLY service meant to be reachable from the internet. A full
-  #     browser-based Kali desktop (real Firefox + nmap/sqlmap/Burp/terminal)
-  #     served over its own HTTPS on :6901 (self-signed cert — that's fine,
-  #     click through the warning). Demo attendees log in here and attack
-  #     the targets below *from inside this container*, using its internal
-  #     Docker DNS names (http://dvwa, http://juice-shop, etc.) — the targets
-  #     themselves never get a public port.
+  # --- The real browser-based Kali desktop (Firefox + nmap/sqlmap/Burp/
+  #     terminal), served over its own HTTPS on :6901 (self-signed cert —
+  #     that's fine, click through the warning). It's one shared X session,
+  #     not one container per user, so it's loopback-only here — `gate`
+  #     below is the actual public entry point, letting in one visitor at a
+  #     time so two people can't fight over the same desktop (or crash it
+  #     under concurrent load). Attendees attack the targets below *from
+  #     inside this container*, using its internal Docker DNS names
+  #     (http://dvwa, http://juice-shop, etc.) — the targets themselves
+  #     never get a public port either.
   attack-box:
     # Built locally (see attack-box.Dockerfile) so nmap/tcpdump/etc. get
     # cap_net_raw baked onto the binaries — the desktop session runs as a
@@ -39,12 +42,30 @@ services:
       # rather than loosening the whole container's seccomp/AppArmor.
       - MOZ_DISABLE_CONTENT_SANDBOX=1
     ports:
-      - "6901:6901"     # intentionally public — everything else below is not
+      - "127.0.0.1:6901:6901"   # no longer public — reached only via `gate`
     volumes:
       # Drop your own binaries/scripts into ./tools on the VPS host — they
       # show up at /opt/tools inside the desktop immediately, no rebuild or
       # restart needed. chmod +x on the host before running.
       - ./tools:/opt/tools
+    networks: [vulnbench]
+
+  # --- The ONLY service meant to be reachable from the internet now. A
+  #     single-slot access queue: proxies through to attack-box for one
+  #     visitor at a time, everyone else sees a waiting-room page with their
+  #     queue position. See gate/server.js for the admission logic.
+  gate:
+    build:
+      context: ./gate
+    container_name: vb-gate
+    restart: unless-stopped
+    environment:
+      - KASM_TARGET=https://attack-box:6901
+      - PORT=6901
+    ports:
+      - "6901:6901"     # intentionally public — everything else is not
+    depends_on:
+      - attack-box
     networks: [vulnbench]
 
   # --- Broadest single-app coverage: XSS, SQLi/NoSQLi, IDOR, JWT/crypto
