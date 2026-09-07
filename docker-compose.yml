@@ -41,8 +41,11 @@ services:
       # userns restriction) blocks — this skips just that sandbox layer
       # rather than loosening the whole container's seccomp/AppArmor.
       - MOZ_DISABLE_CONTENT_SANDBOX=1
-    ports:
-      - "127.0.0.1:6901:6901"   # no longer public — reached only via `gate`
+    # No ports: entry — `gate` reaches this over the internal `vulnbench`
+    # network by service name (https://attack-box:6901), so no host port is
+    # needed. (Publishing one here would also collide with gate's public
+    # 6901 below: a 0.0.0.0 bind can't coexist with a 127.0.0.1 bind on the
+    # same host port.)
     volumes:
       # Drop your own binaries/scripts into ./tools on the VPS host — they
       # show up at /opt/tools inside the desktop immediately, no rebuild or

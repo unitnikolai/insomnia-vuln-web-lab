@@ -2,14 +2,16 @@
 
 **Architecture:** one public entry point (`gate` — a single-slot access queue
 on :6901) in front of `attack-box` (a browser-based Kali desktop), everything
-else internal-only. `attack-box` is one shared X session, not one container
-per attendee, so `gate` lets in one visitor at a time and holds everyone else
-in a waiting room — two people driving the same desktop at once just fight
-over the mouse and can crash it under concurrent load. Whoever's admitted logs
-into the attack box in their browser and runs their tools *from inside it*,
-reaching targets by Docker DNS name on the internal `vulnbench` network. The
-vulnerable targets themselves never get a public port — they can't be scanned
-or hit directly from the internet, only from inside the attack box.
+else internal-only, including `attack-box` itself, which has no host port at
+all and is reached only by `gate` over the internal `vulnbench` network.
+`attack-box` is one shared X session, not one container per attendee, so
+`gate` lets in one visitor at a time and holds everyone else in a waiting
+room — two people driving the same desktop at once just fight over the mouse
+and can crash it under concurrent load. Whoever's admitted logs into the
+attack box in their browser and runs their tools *from inside it*, reaching
+targets by Docker DNS name on the internal network. The vulnerable targets
+themselves never get a public port either — they can't be scanned or hit
+directly from the internet, only from inside the attack box.
 
 Treat this VPS as hostile while the fleet runs: several targets (WebGoat,
 Vulhub CVEs) contain real, working RCE. Keeping them off the public internet
@@ -199,10 +201,10 @@ ssh -N -D 1080 user@vps-ip
 
 ## Isolation checklist
 
-- Only `gate` publishes a non-loopback port (`6901`); `attack-box` itself is
-  loopback-only now and reached only via `gate` over the internal network.
-  Every target's `ports:` entry (if any) must stay prefixed `127.0.0.1:` or
-  be absent entirely — this includes crAPI and any Vulhub CVE you bring up.
+- Only `gate` publishes a host port (`6901`) at all now; `attack-box` has no
+  `ports:` entry and is reached only over the internal `vulnbench` network by
+  `gate`. Every *other* target's `ports:` entry (if any) must stay prefixed
+  `127.0.0.1:` — this includes crAPI and any Vulhub CVE you bring up.
 - `./status.sh` after every `up.sh` — confirms only 22/6901 are listening.
 - Rotate the attack-box password before each public demo (`rm .env`).
 - Keep SSH hardened: key-based auth only (`PasswordAuthentication no`), and
