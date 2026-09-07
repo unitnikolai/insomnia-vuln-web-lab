@@ -14,10 +14,13 @@ const express = require('express');
 const httpProxy = require('http-proxy');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
-const http = require('http');
+const https = require('https');
+const fs = require('fs');
 
 const TARGET = process.env.KASM_TARGET || 'https://attack-box:6901';
 const PORT = process.env.PORT || 6901;
+const TLS_CERT = process.env.TLS_CERT || '/app/certs/cert.pem';
+const TLS_KEY = process.env.TLS_KEY || '/app/certs/key.pem';
 const GRANT_GRACE_MS = 30_000;      // must open the ws within this long after being granted
 const MAX_SESSION_MS = 45 * 60_000; // hard cap per turn, even if still connected
 const SWEEP_INTERVAL_MS = 5_000;
@@ -111,7 +114,13 @@ app.use((req, res, next) => {
   res.redirect('/queue/waiting-room');
 });
 
-const server = http.createServer(app);
+// Terminates HTTPS itself (self-signed, same as Kasm's own cert did before
+// gate sat in front of it) — browsers still get an https:// page, just with
+// the same click-through warning as always.
+const server = https.createServer(
+  { cert: fs.readFileSync(TLS_CERT), key: fs.readFileSync(TLS_KEY) },
+  app
+);
 
 server.on('upgrade', (req, socket, head) => {
   const cookies = Object.fromEntries(
