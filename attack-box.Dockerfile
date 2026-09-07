@@ -12,3 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends libcap2-bin \
       [ -n "$p" ] && setcap cap_net_raw,cap_net_admin+eip "$p" || true; \
     done \
  && rm -rf /var/lib/apt/lists/*
+
+# Switch back to the image's own non-root user for runtime. Without this,
+# `USER root` above becomes the image's baked-in default user — independent
+# of whatever docker-compose.yml sets — so the whole desktop session
+# (including Firefox) runs as root, which Firefox refuses to do.
+USER kasm-user
