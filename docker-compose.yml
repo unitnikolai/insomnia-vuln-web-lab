@@ -20,8 +20,15 @@ services:
   attack-box:
     # Built locally (see attack-box.Dockerfile) so nmap/tcpdump/etc. get
     # cap_net_raw baked onto the binaries — the desktop session runs as a
-    # non-root user internally regardless of `user: root` below, so a plain
-    # base-image pull can't do real raw-socket scans (SYN scans, etc.).
+    # non-root user internally regardless of the container's own user, so a
+    # plain base-image pull can't do real raw-socket scans (SYN scans, etc.).
+    # No `user: root` override here: cap_add below still grants the
+    # container's capability bounding set (which setcap's file capabilities
+    # need to actually work), but forcing the *runtime* user to root also
+    # made the desktop launch GUI apps as root — Firefox refuses to run that
+    # way ("running Firefox as root ... $HOME is /home/kasm-user"). Leaving
+    # the image's own default user in place keeps the desktop session as
+    # kasm-user as intended, while setcap+cap_add still cover raw sockets.
     # If the base image pull in the Dockerfile ever 404s, check current tags
     # at https://hub.docker.com/r/kasmweb/kali-rolling-desktop/tags.
     build:
@@ -30,7 +37,6 @@ services:
     container_name: vb-attack-box
     restart: unless-stopped
     shm_size: "512m"
-    user: root
     cap_add:
       - NET_ADMIN
       - NET_RAW

@@ -90,10 +90,12 @@ since the image won't have your build environment's libc/libraries.
 ## 1c. Full raw-socket capability (SYN scans, packet crafting, etc.)
 
 Kasm's desktop images run the actual desktop/terminal session as an internal
-`kasm_user`, not root — so even with `user: root` and Docker's default
-capabilities on the container, `nmap -sS`, ARP tooling, and anything else
-needing `CAP_NET_RAW` fails from the in-browser terminal, and `sudo` isn't
-configured for that user either.
+`kasm_user`, not root — so Docker's default capabilities on the container
+alone aren't enough, `nmap -sS`, ARP tooling, and anything else needing
+`CAP_NET_RAW` fails from the in-browser terminal, and `sudo` isn't configured
+for that user either. (Don't add `user: root` to work around this — it does
+grant the container capabilities, but it also makes the desktop launch GUI
+apps like Firefox as root, which Firefox refuses to do.)
 
 **Already baked in for a fresh deploy:** `attack-box.Dockerfile` runs `setcap`
 on `nmap`, `tcpdump`, `hping3`, `arping`, and `masscan` at build time, so they
