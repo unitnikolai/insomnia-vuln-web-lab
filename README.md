@@ -91,11 +91,11 @@ since the image won't have your build environment's libc/libraries.
 
 Kasm's desktop images run the actual desktop/terminal session as an internal
 `kasm_user`, not root — so Docker's default capabilities on the container
-alone aren't enough, `nmap -sS`, ARP tooling, and anything else needing
-`CAP_NET_RAW` fails from the in-browser terminal, and `sudo` isn't configured
-for that user either. (Don't add `user: root` to work around this — it does
-grant the container capabilities, but it also makes the desktop launch GUI
-apps like Firefox as root, which Firefox refuses to do.)
+alone aren't enough, and `nmap -sS`, ARP tooling, and anything else needing
+`CAP_NET_RAW` fails from the in-browser terminal. (Don't add `user: root` to
+work around this — it does grant the container capabilities, but it also
+makes the desktop launch GUI apps like Firefox as root, which Firefox
+refuses to do.)
 
 **Already baked in for a fresh deploy:** `attack-box.Dockerfile` runs `setcap`
 on `nmap`, `tcpdump`, `hping3`, `arping`, and `masscan` at build time, so they
@@ -115,6 +115,11 @@ the writable layer) — a `down.sh`/`up.sh` cycle rebuilds from the Dockerfile
 and loses it again for anything not listed there. Add your own binary's name
 to the `for bin in ...` loop in `attack-box.Dockerfile` if you want it to
 survive teardown/rebuild automatically.
+
+**For anything else needing root** (apt install, a tool that doesn't work
+via setcap alone), `kasm-user` has passwordless `sudo` — `attack-box.Dockerfile`
+drops a NOPASSWD sudoers entry for it, since the account otherwise has no
+password configured at all and `sudo` would sit at an unsatisfiable prompt.
 
 ## 2. What attendees do
 
