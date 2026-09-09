@@ -16,7 +16,10 @@ if [[ ! -f "$ENV_FILE" ]]; then
   chmod 600 "$ENV_FILE"
 fi
 
-docker compose up -d
+# --build: without it, compose reuses whatever image is already cached for
+# attack-box and silently ignores any Dockerfile changes since that image
+# was last built.
+docker compose up -d --build
 
 PASS=$(grep ATTACK_BOX_PASSWORD "$ENV_FILE" | cut -d= -f2)
 IP=$(curl -s -4 ifconfig.me || echo "<vps-ip>")
