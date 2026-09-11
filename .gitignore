@@ -10,5 +10,10 @@ tools/*
 crAPI/
 vulhub/
 
+# tracks which vulhub recipe(s) are active, so down.sh/status.sh can find them
+.vulhub-active
+.vulhub-all-active
+.vulhub-all-failures
+
 # gate service — installed in its Docker build, not needed in the repo
 gate/node_modules/

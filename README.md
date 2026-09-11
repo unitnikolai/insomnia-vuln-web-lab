@@ -42,8 +42,12 @@ Copy this folder to the VPS: `scp -r vuln-lab user@vps-ip:~/`. SSH in,
 ## 1. Bring the fleet up
 
 ```bash
-./up.sh              # stays up until you tear it down
-./up.sh --hours 3     # or: auto tear-down after 3 hours (needs `at`, installed above)
+./up.sh                                            # stays up until you tear it down
+./up.sh --hours 3                                  # or: auto tear-down after 3 hours (needs `at`, installed above)
+./up.sh --vulhub log4j/CVE-2021-44228              # also bring up one Vulhub CVE recipe (see section 4)
+./up.sh --vulhub-category struts2                  # or: a whole Vulhub category at once (see section 4b)
+./up.sh --vulhub-all                               # or: EVERY Vulhub recipe at once (heaviest — see section 4c)
+./up.sh --vulhub log4j/CVE-2021-44228 --hours 3    # any of the above, combined with --hours
 ```
 
 First run generates a random attack-box password into `.env` (mode 600) and
@@ -54,7 +58,7 @@ shown on a screen).
 
 ```bash
 ./status.sh    # what's running, and confirms only 22/6901 are listening
-./down.sh       # tear down (keeps DB volumes)
+./down.sh       # tear down (keeps DB volumes) — also tears down any active Vulhub recipe
 ./down.sh --wipe  # tear down and reset all target DB state
 ```
 
@@ -177,18 +181,143 @@ The apps above are synthetic training targets. For actual named vulnerabilities
 (deserialization gadget chains, Log4Shell-class RCEs, framework-specific XXE,
 Struts/Spring RCEs, etc.), use Vulhub — hundreds of docker-compose recipes, one
 per CVE, reproducing the exact vulnerable software version. **Never publish
-these to a public port** — they're real exploits for real CVEs:
+these to a public port** — they're real exploits for real CVEs.
+
+**Browse recipes** with `./vulhub.sh` directly (this doesn't start anything):
 
 ```bash
-git clone https://github.com/vulhub/vulhub.git
-cd vulhub/log4j/CVE-2021-44228        # example: Log4Shell
+./vulhub.sh list         # browse all available recipes
+./vulhub.sh list log4j   # filter by name
 ```
 
-Before `docker compose up -d`, same rule as crAPI: strip any bare port
-publish, join `vulnbench` as an external network. Test from inside the attack
-box, then `docker compose down` before moving to the next CVE — many share
-default ports, so run one (or a few) at a time rather than the whole
-collection simultaneously.
+**Bring one up** as part of the fleet with `./up.sh --vulhub`, the same way
+you'd start any other target:
+
+```bash
+./up.sh --vulhub log4j/CVE-2021-44228    # example: Log4Shell
+```
+
+This clones/updates `vulhub` (gitignored, not part of this repo) if needed,
+rewrites any bare port publish in that recipe's `docker-compose.yml` to bind
+`127.0.0.1` only, generates a `docker-compose.vulnbench-override.yml` in the
+recipe's directory that joins every service to the `vulnbench` network — same
+rule as every other target in this lab — then brings it up, *after* the base
+fleet so `vulnbench` already exists. The active recipe name is tracked in the
+gitignored `.vulhub-active`, so `./down.sh` tears it down automatically along
+with everything else — no separate step to remember.
+
+The port rewrite handles the common `"HOST:CONTAINER"` and `IP:HOST:CONTAINER`
+forms; anything unusual (protocol suffixes, port ranges) is left alone and
+printed so you can check it by hand before treating the recipe as safe.
+
+Only one recipe at a time this way: many share default ports and a bare
+`web`/`db` service name, so they collide with each other when joined to the
+same `vulnbench` network. To swap to a different CVE without tearing down the
+whole fleet, use `vulhub.sh` directly — it keeps `.vulhub-active` (and
+therefore what `./down.sh` will clean up) in sync:
+
+```bash
+./vulhub.sh down log4j/CVE-2021-44228
+./vulhub.sh up   struts2/CVE-2017-5638
+```
+
+### 4b. Bringing up many Vulhub recipes at once (batch mode)
+
+For more than a handful of CVEs concurrently, `vulhub.sh` switches to a
+different isolation model than 4 above, since sharing one network doesn't
+scale — most recipes reuse the same service names and ports (154 of the 330
+recipes bind host port `8080` alone; 170 name a service `web`). Per recipe,
+batch mode: strips its `ports:` entirely (no host binding at all, loopback
+included — reachable only via the attack box), puts it on its own private
+network (`vulhub-<category>-<cve>`) instead of `vulnbench` so its services
+keep talking to each other by their original names (a `web` container still
+reaches its own `db`) without colliding with every other recipe's `web`/`db`,
+and gives each service a globally-unique alias, `<category>-<cve>-<service>`,
+with the attack box connected to every one of these per-recipe networks.
+**From inside the attack box, always use the unique alias** — e.g.
+`http://log4j-cve-2021-44228-solr` — never the bare service name
+(`http://solr`): the attack box sits on every active recipe's network at
+once, so a bare name is ambiguous and which container answers is undefined.
+
+Every service also gets a `mem_limit` (default `768m`) — a lot of these
+images are old JVM apps (Tomcat, Solr, WebLogic, ActiveMQ, Elasticsearch...)
+that size their default heap off however much memory Docker *reports* as
+visible to the container, not what the app actually needs; uncapped, a
+handful of these can eat most of a host's RAM. Override with `--mem-limit`
+if a category needs more headroom (or `--mem-limit none` to disable) —
+check `docker compose logs` inside a recipe's directory if containers OOM
+loop instead of settling.
+
+Two recipes (of 330) declare `privileged: true` — a full container-escape
+risk, not just an in-app vulnerability — and are skipped by default in both
+modes below. Pass `--include-privileged` to `vulhub.sh` directly if you want
+them anyway (neither `up.sh` flag exposes this — run `vulhub.sh up-all` /
+`up-category` yourself with it if you need it).
+
+**Recommended: one category at a time.** `./vulhub.sh categories` lists
+every category (150 of them) with its recipe count — things like `struts2`
+(20 recipes), `spring` (10), `weblogic` (7), `php` (9). Bringing up one
+category is a properly *sized* batch instead of an all-or-nothing choice:
+
+```bash
+./vulhub.sh categories struts     # how many recipes, before committing
+./up.sh --vulhub-category struts2 # bring that category up, joined to the fleet
+./vulhub.sh down-category struts2 # tear down just this category — others stay up
+```
+
+Rough RAM per category, with the default 768m cap (real usage is normally
+well under the cap since idle recipes rarely peak; treat this as a ceiling,
+not a measurement — I have not run these live to confirm):
+
+| Category  | Recipes | Ceiling (cap × recipes) |
+|-----------|---------|--------------------------|
+| struts2   | 20      | ~15GB                    |
+| spring    | 10      | ~7.5GB                   |
+| weblogic  | 7       | ~5.5GB                   |
+| php       | 9       | ~7GB                     |
+
+You can bring up several categories over time — each `up-category` call adds
+to what's already running rather than replacing it; `down-category` removes
+just that one.
+
+### 4c. Bringing up *every* Vulhub recipe at once
+
+For a full-collection benchmark rig rather than a category at a time,
+`./up.sh --vulhub-all` brings up the whole collection concurrently — as of
+this writing, 330 recipes / ~446 containers, using the same batch isolation
+model as 4b:
+
+```bash
+./up.sh --vulhub-all
+```
+
+**Size the VPS for this before running it.** Roughly one third of Vulhub's
+containers are JVM-based (WebLogic, Solr, Elasticsearch, Confluence,
+ActiveMQ, Tomcat/struts2, Jenkins, JBoss, Hadoop, Nexus...) — historically
+the category most likely to reserve far more memory than it uses if
+uncapped. With every container capped at the default `mem_limit=768m`, the
+absolute ceiling for all 330 recipes is in the neighborhood of **300-350GB**;
+realistic usage, since most recipes sit idle well under their cap, is likely
+much lower, plausibly in the **60-120GB range**, but I have not run the full
+collection live to confirm either number — budget toward the ceiling, not
+the estimate, and treat `--mem-limit` as a dial: lower it fleet-wide if the
+box is smaller than that, or raise it for a specific category if containers
+OOM-loop at the default. On top of RAM: expect 300+ image pulls (tens of GB
+of disk) and 500+ running containers — a different order of resource use
+than the base fleet, a single recipe, or one category. Don't run this on the
+same modest box hosting a live demo unless you've confirmed the headroom;
+`--vulhub-category` (4b) is almost always the better fit for a real demo.
+
+A handful of recipes will likely fail to start regardless (a 404'd image, an
+arch mismatch, a recipe needing manual setup this script doesn't automate)
+— both `up-all` and `up-category` report a per-recipe UP/FAIL/SKIP line as
+they go and write failures to the gitignored `.vulhub-all-failures` for
+follow-up, rather than aborting the whole run over one bad recipe.
+
+```bash
+./vulhub.sh status-all   # active recipe count (by category), isolated networks, last run's failures
+./down.sh                # tears every batch-mode recipe down too (same as any other target)
+```
 
 ## 5. Admin-only fallback access: SSH tunnel
 
@@ -211,7 +340,9 @@ ssh -N -D 1080 user@vps-ip
 - Only `gate` publishes a host port (`6901`) at all now; `attack-box` has no
   `ports:` entry and is reached only over the internal `vulnbench` network by
   `gate`. Every *other* target's `ports:` entry (if any) must stay prefixed
-  `127.0.0.1:` — this includes crAPI and any Vulhub CVE you bring up.
+  `127.0.0.1:` — this includes crAPI and any single Vulhub CVE you bring up
+  with `./up.sh --vulhub`. (`--vulhub-category`/`--vulhub-all` recipes have
+  no `ports:` entry at all — see 4b/4c.)
 - `./status.sh` after every `up.sh` — confirms only 22/6901 are listening.
 - Rotate the attack-box password before each public demo (`rm .env`).
 - Keep SSH hardened: key-based auth only (`PasswordAuthentication no`), and
