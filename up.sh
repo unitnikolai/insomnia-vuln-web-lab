@@ -68,7 +68,12 @@ gen_secret() { openssl rand -base64 18 | tr -d '=+/'; }
 # doesn't exist yet. Matched by suffix so it's robust to the compose project
 # name (COMPOSE_PROJECT_NAME / -p / a renamed checkout dir).
 db_volume_name() {
-  docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '(^|_)dashboard-db-data$' | head -n1
+  # The trailing `|| true` matters: with `set -o pipefail`, a no-match grep
+  # makes this whole pipeline exit non-zero, and under `set -e` that would
+  # kill up.sh at the `existing_vol=$(db_volume_name)` assignment below —
+  # silently, before any password is minted. Swallow it so "no such volume"
+  # reads as empty output + success, not as a fatal error.
+  docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '(^|_)dashboard-db-data$' | head -n1 || true
 }
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -140,7 +145,7 @@ echo
 # loudly, rather than leave the dashboard silently looping on access-denied.
 # (mysqladmin ping reports "alive" even on bad creds, so ping alone can't
 # tell — we do a real authenticated query as the dashboard user.)
-DB_PASS=$(grep '^DASHBOARD_DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)
+DB_PASS=$(grep '^DASHBOARD_DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2- || true)
 for _ in $(seq 1 30); do
   docker exec vb-dashboard-db mysqladmin --silent ping >/dev/null 2>&1 && break
   sleep 2
