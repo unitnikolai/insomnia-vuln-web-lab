@@ -4,9 +4,11 @@ networks:
     ipam:
       config:
         - subnet: 172.28.1.0/24   # fixed range so it's predictable across redeploys
-  # Deliberately separate from vulnbench: the dashboard holds the answer key
-  # (every vulnerability/CVE a scan is supposed to find), so it must never be
-  # reachable from inside attack-box, where attendees run their scans.
+  # Holds the dashboard DB (the answer key: every vulnerability/CVE a scan is
+  # supposed to find). dashboard-db lives ONLY here, so the database is never
+  # directly reachable from attack-box. The dashboard *app* also joins
+  # vulnbench (see below) so the attack-box can open its UI — that access is
+  # gated by the dashboard's basic-auth login rather than network isolation.
   benchdash:
     driver: bridge
 
@@ -157,11 +159,11 @@ services:
   # --- Benchmark dashboard: ground-truth vulnerabilities/CVEs per lab and
   #     Vulhub recipe (see dashboard/db/init and dashboard/seed), plus a JSON
   #     scan-export upload that scores a run's findings against that answer
-  #     key. On its own `benchdash` network (NOT vulnbench) and bound to
-  #     127.0.0.1 only, with its own basic-auth login — this is the answer
-  #     key, so it must stay unreachable from attack-box/attendees. Admin
-  #     access is via SSH tunnel, same as the loopback-bound targets above
-  #     (see README section 5).
+  #     key. dashboard-db stays on `benchdash` only (never vulnbench), so the
+  #     DB is unreachable from attack-box; the dashboard *app* also joins
+  #     vulnbench so the attack-box can open its UI at http://dashboard:3000,
+  #     guarded by the basic-auth login (DASHBOARD_PASSWORD). Admin access is
+  #     also via SSH tunnel to the loopback port (see README section 5).
   dashboard-db:
     image: mysql:8.0
     container_name: vb-dashboard-db
@@ -207,4 +209,10 @@ services:
     depends_on:
       dashboard-db:
         condition: service_healthy
-    networks: [benchdash]
+    # On BOTH networks: benchdash to reach dashboard-db, and vulnbench so the
+    # attack-box can open the dashboard UI at http://dashboard:3000 (e.g. to
+    # spawn Vulhub targets on demand). With that reachability, the answer key
+    # is guarded ONLY by the basic-auth login (DASHBOARD_PASSWORD) — keep it
+    # set. dashboard-db stays off vulnbench, so the DB is never directly
+    # reachable from the attack-box.
+    networks: [benchdash, vulnbench]

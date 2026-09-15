@@ -133,9 +133,11 @@ echo
 echo " Targets are reachable only from INSIDE the attack box, by name:"
 docker compose config --services | grep -vE '^(attack-box|gate|dashboard|dashboard-db)$' | sed 's/^/   http:\/\//'
 echo
-echo " Benchmark dashboard (admin-only — NOT reachable from the attack box):"
-echo "   ssh -N -L 3010:127.0.0.1:3010 <user>@${IP}"
-echo "   then open http://127.0.0.1:3010  (user: admin, password: ${DASH_PASS})"
+echo " Benchmark dashboard (answer key — guarded by its basic-auth login):"
+echo "   From the attack-box desktop:      http://dashboard:3000"
+echo "   From your laptop via SSH tunnel:  ssh -N -L 3010:127.0.0.1:3010 <user>@${IP}"
+echo "                                     then open http://127.0.0.1:3010"
+echo "   login:  admin / ${DASH_PASS}"
 echo "======================================================================"
 echo
 
