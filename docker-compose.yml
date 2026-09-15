@@ -196,9 +196,7 @@ services:
       - DB_PASSWORD=${DASHBOARD_DB_PASSWORD:?run ./up.sh first, or set DASHBOARD_DB_PASSWORD in .env}
       - DB_NAME=vuln_dashboard
       - DASHBOARD_USER=${DASHBOARD_USER:-admin}
-      # Optional: unset -> dashboard runs with no basic-auth login (it's
-      # already loopback-only + SSH-tunnel'd). Set it in .env to require one.
-      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?run ./up.sh first, or set DASHBOARD_PASSWORD in .env}
       - PORT=3000
       - PROJECT_ROOT=/project
     ports:

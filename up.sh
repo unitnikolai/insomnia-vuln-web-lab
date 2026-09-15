@@ -80,13 +80,12 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "No .env found — generating fresh secrets."
   {
     echo "ATTACK_BOX_PASSWORD=$(gen_secret)"
+    echo "DASHBOARD_PASSWORD=$(gen_secret)"
   } > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 fi
-# DASHBOARD_PASSWORD is intentionally NOT auto-generated: the dashboard is
-# already loopback-only + SSH-tunnel'd, so its basic-auth login is optional.
-# The dashboard runs with no login unless you add a DASHBOARD_PASSWORD line to
-# .env yourself (the app then enforces it; compose no longer requires it).
+# Back-fill secrets for a .env created before the dashboard existed.
+grep -q '^DASHBOARD_PASSWORD=' "$ENV_FILE" || echo "DASHBOARD_PASSWORD=$(gen_secret)" >> "$ENV_FILE"
 
 # DASHBOARD_DB_PASSWORD is special: MySQL bakes it into the dashboard-db
 # volume on that volume's FIRST init and ignores the env var forever after.
@@ -120,9 +119,7 @@ fi
 docker compose up -d --build
 
 PASS=$(grep ATTACK_BOX_PASSWORD "$ENV_FILE" | cut -d= -f2)
-# `|| true`: DASHBOARD_PASSWORD is optional, so a no-match grep must not trip
-# `set -o pipefail`/`set -e` and abort the script here.
-DASH_PASS=$(grep '^DASHBOARD_PASSWORD=' "$ENV_FILE" | cut -d= -f2- || true)
+DASH_PASS=$(grep DASHBOARD_PASSWORD "$ENV_FILE" | cut -d= -f2)
 IP=$(curl -s -4 ifconfig.me || echo "<vps-ip>")
 
 echo
@@ -136,13 +133,9 @@ echo
 echo " Targets are reachable only from INSIDE the attack box, by name:"
 docker compose config --services | grep -vE '^(attack-box|gate|dashboard|dashboard-db)$' | sed 's/^/   http:\/\//'
 echo
-echo " Benchmark dashboard (NOT reachable from the attack box — SSH tunnel only):"
+echo " Benchmark dashboard (admin-only — NOT reachable from the attack box):"
 echo "   ssh -N -L 3010:127.0.0.1:3010 <user>@${IP}"
-if [[ -n "$DASH_PASS" ]]; then
-  echo "   then open http://127.0.0.1:3010  (user: admin, password: ${DASH_PASS})"
-else
-  echo "   then open http://127.0.0.1:3010  (no login — add DASHBOARD_PASSWORD to .env to require one)"
-fi
+echo "   then open http://127.0.0.1:3010  (user: admin, password: ${DASH_PASS})"
 echo "======================================================================"
 echo
 
