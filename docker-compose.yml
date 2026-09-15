@@ -4,6 +4,14 @@ networks:
     ipam:
       config:
         - subnet: 172.28.1.0/24   # fixed range so it's predictable across redeploys
+  # Deliberately separate from vulnbench: the dashboard holds the answer key
+  # (every vulnerability/CVE a scan is supposed to find), so it must never be
+  # reachable from inside attack-box, where attendees run their scans.
+  benchdash:
+    driver: bridge
+
+volumes:
+  dashboard-db-data:
 
 services:
 
@@ -145,3 +153,58 @@ services:
       - "127.0.0.1:3005:8080"
       - "127.0.0.1:3006:9090"
     networks: [vulnbench]
+
+  # --- Benchmark dashboard: ground-truth vulnerabilities/CVEs per lab and
+  #     Vulhub recipe (see dashboard/db/init and dashboard/seed), plus a JSON
+  #     scan-export upload that scores a run's findings against that answer
+  #     key. On its own `benchdash` network (NOT vulnbench) and bound to
+  #     127.0.0.1 only, with its own basic-auth login — this is the answer
+  #     key, so it must stay unreachable from attack-box/attendees. Admin
+  #     access is via SSH tunnel, same as the loopback-bound targets above
+  #     (see README section 5).
+  dashboard-db:
+    image: mysql:8.0
+    container_name: vb-dashboard-db
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=vuln_dashboard
+      - MYSQL_USER=dashboard
+      - MYSQL_PASSWORD=${DASHBOARD_DB_PASSWORD:?run ./up.sh first, or set DASHBOARD_DB_PASSWORD in .env}
+      - MYSQL_ROOT_PASSWORD=${DASHBOARD_DB_PASSWORD:?run ./up.sh first, or set DASHBOARD_DB_PASSWORD in .env}
+    volumes:
+      - dashboard-db-data:/var/lib/mysql
+      # Runs once against an empty data dir: creates the schema then seeds
+      # the built-in labs' ground-truth vulnerabilities. Re-run
+      # dashboard/seed/seed-vulhub.js by hand to add every Vulhub recipe too
+      # (not baked in here since it depends on the gitignored ./vulhub clone).
+      - ./dashboard/db/init:/docker-entrypoint-initdb.d:ro
+    networks: [benchdash]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DASHBOARD_DB_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  dashboard:
+    build:
+      context: ./dashboard/server
+    container_name: vb-dashboard
+    restart: unless-stopped
+    environment:
+      - DB_HOST=dashboard-db
+      - DB_USER=dashboard
+      - DB_PASSWORD=${DASHBOARD_DB_PASSWORD:?run ./up.sh first, or set DASHBOARD_DB_PASSWORD in .env}
+      - DB_NAME=vuln_dashboard
+      - DASHBOARD_USER=${DASHBOARD_USER:-admin}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?run ./up.sh first, or set DASHBOARD_PASSWORD in .env}
+      - PORT=3000
+      - PROJECT_ROOT=/project
+    ports:
+      - "127.0.0.1:3010:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/project
+    depends_on:
+      dashboard-db:
+        condition: service_healthy
+    networks: [benchdash]

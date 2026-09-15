@@ -1,0 +1,84 @@
+<%- include('partials/nav', { title: lab.name }) %>
+
+<p class="muted"><a href="/">&larr; all labs</a></p>
+<h1><%= lab.name %></h1>
+<p class="subtitle">
+  <%= lab.kind %><% if (lab.category) { %> · <%= lab.category %><% } %>
+  <% if (lab.url_hint) { %> · <span class="mono"><%= lab.url_hint %></span><% } %>
+</p>
+<% if (lab.description) { %><p><%= lab.description %></p><% } %>
+
+<% if (container) { %>
+  <div class="container-control">
+    <span class="status-dot <%= container.State && container.State.Status || 'unknown' %>"></span>
+    <strong><%= container.Name ? container.Name.replace(/^\//, '') : '—' %></strong>
+    &nbsp;—&nbsp;
+    <span class="muted"><%= container.State ? container.State.Status : 'unknown' %></span>
+    <% if (container.State && container.State.Status === 'running') { %>
+      <form method="post" action="/containers/<%= container.Name ? container.Name.replace(/^\//, '') : '' %>/stop" class="inline-form">
+        <button type="submit" class="btn btn-stop">&#9632; Stop</button>
+      </form>
+      <form method="post" action="/containers/<%= container.Name ? container.Name.replace(/^\//, '') : '' %>/restart" class="inline-form">
+        <button type="submit" class="btn btn-restart">&#8635; Restart</button>
+      </form>
+    <% } else { %>
+      <form method="post" action="/containers/<%= container.Name ? container.Name.replace(/^\//, '') : '' %>/start" class="inline-form">
+        <button type="submit" class="btn btn-start">&#9654; Start</button>
+      </form>
+    <% } %>
+  </div>
+<% } %>
+
+<h2>Ground-truth vulnerabilities (<%= vulns.length %>)</h2>
+<% if (matchedIds.size > 0) { %>
+  <p class="muted">
+    Coverage across all uploaded scans for this lab: <%= matchedIds.size %> / <%= vulns.length %> matched.
+  </p>
+  <div class="coverage-bar"><div style="width: <%= Math.round(100 * matchedIds.size / Math.max(vulns.length,1)) %>%"></div></div>
+<% } %>
+
+<table>
+  <thead>
+    <tr><th>Title</th><th>CVE</th><th>Category</th><th>Severity</th><th>Found?</th></tr>
+  </thead>
+  <tbody>
+    <% vulns.forEach(v => { %>
+      <tr>
+        <td>
+          <%= v.title %>
+          <% if (v.reference_url) { %><br><a class="mono" href="<%= v.reference_url %>" target="_blank" rel="noopener"><%= v.reference_url %></a><% } %>
+        </td>
+        <td class="mono"><%= v.cve_id || '—' %></td>
+        <td><%= v.category || '—' %></td>
+        <td><span class="badge <%= v.severity %>"><%= v.severity %></span></td>
+        <td>
+          <% if (matchedIds.has(v.id)) { %>
+            <span class="matched">✓ matched</span>
+          <% } else { %>
+            <span class="missing">—</span>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<h2>Scans uploaded against this lab (<%= scans.length %>)</h2>
+<% if (scans.length === 0) { %>
+  <p class="muted">None yet. <a href="/upload">Upload one</a>.</p>
+<% } else { %>
+  <table>
+    <thead><tr><th>File</th><th>Tool</th><th>Uploaded</th></tr></thead>
+    <tbody>
+      <% scans.forEach(s => { %>
+        <tr>
+          <td><a href="/scans/<%= s.id %>"><%= s.filename %></a></td>
+          <td><%= s.tool_name || '—' %></td>
+          <td><%= new Date(s.uploaded_at).toLocaleString() %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+
+<%- include('partials/foot') %>

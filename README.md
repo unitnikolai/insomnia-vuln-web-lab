@@ -319,6 +319,43 @@ follow-up, rather than aborting the whole run over one bad recipe.
 ./down.sh                # tears every batch-mode recipe down too (same as any other target)
 ```
 
+## 4d. Benchmark dashboard (ground-truth vulnerabilities + scan scoring)
+
+A Node.js + MySQL dashboard (`./dashboard`), brought up automatically as part
+of `./up.sh` alongside everything else. It tracks, per lab and per Vulhub
+recipe, the vulnerabilities/CVEs a scan is *supposed* to find, and lets you
+upload a scanner's JSON export to see how many it actually found.
+
+**It is intentionally not reachable from the attack box.** It holds the
+answer key for the benchmark, so it sits on its own `benchdash` network
+(never `vulnbench`) with no path from inside the Kali desktop, is bound only
+to `127.0.0.1:3010` on the host, and is basic-auth gated on top of that —
+admin access only, via SSH tunnel like the other loopback ports:
+
+```bash
+ssh -N -L 3010:127.0.0.1:3010 user@vps-ip
+# then open http://127.0.0.1:3010 — creds printed by ./up.sh (also in .env)
+```
+
+The built-in apps (DVWA, Juice Shop, Mutillidae, VAmPI, DVGA, WebGoat/
+WebWolf) are seeded automatically on first boot with a curated set of
+vulnerability classes (see `dashboard/db/init/002_seed_builtin.sql`). Vulhub
+recipes are **not** auto-seeded (there are 300+, and it depends on the
+gitignored `./vulhub` clone) — after `./vulhub.sh list` has cloned it at
+least once, seed every recipe as a ground-truth CVE row with:
+
+```bash
+cd dashboard/seed && npm install
+DB_HOST=127.0.0.1 DB_PORT=3010... # see dashboard/README.md for full env vars
+node seed-vulhub.js
+```
+
+The upload feature accepts any JSON scan export today with a generic,
+best-effort parser (bare array / `findings`/`vulnerabilities`/`results`/
+`alerts` wrapper keys / OWASP ZAP's `site[].alerts[]` shape) — every upload
+is stored in full regardless of whether it parses, so nothing is lost while
+the real target export format gets finalized. See `dashboard/README.md`.
+
 ## 5. Admin-only fallback access: SSH tunnel
 
 For your own poking-around outside of demos, you don't need the attack box —

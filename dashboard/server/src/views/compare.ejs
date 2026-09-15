@@ -1,0 +1,165 @@
+<%- include('partials/nav', { title: 'Comparison' }) %>
+
+<p class="muted"><a href="/compare">&larr; pick different scans</a></p>
+<h1>Scan comparison</h1>
+<p class="subtitle">
+  <strong>A:</strong> <a href="/scans/<%= metaA.id %>"><%= metaA.filename %></a><% if (metaA.tool_name) { %> (<%= metaA.tool_name %>)<% } %>
+  &nbsp;vs&nbsp;
+  <strong>B:</strong> <a href="/scans/<%= metaB.id %>"><%= metaB.filename %></a><% if (metaB.tool_name) { %> (<%= metaB.tool_name %>)<% } %>
+</p>
+
+<!-- ── Summary metrics ── -->
+<h2>Summary metrics</h2>
+<div class="metrics-grid">
+  <div class="metric-card">
+    <span class="metric-label">Total findings</span>
+    <div class="metric-row">
+      <span class="metric-val a"><%= findingsA.length %></span>
+      <span class="metric-vs">vs</span>
+      <span class="metric-val b"><%= findingsB.length %></span>
+    </div>
+  </div>
+
+  <div class="metric-card">
+    <span class="metric-label">Weighted severity score</span>
+    <div class="metric-row">
+      <span class="metric-val a"><%= comparison.weightedA %></span>
+      <span class="metric-vs">vs</span>
+      <span class="metric-val b"><%= comparison.weightedB %></span>
+    </div>
+  </div>
+
+  <div class="metric-card">
+    <span class="metric-label">Average CVSS</span>
+    <div class="metric-row">
+      <span class="metric-val a"><%= comparison.avgCvssA !== null ? comparison.avgCvssA.toFixed(1) : '—' %></span>
+      <span class="metric-vs">vs</span>
+      <span class="metric-val b"><%= comparison.avgCvssB !== null ? comparison.avgCvssB.toFixed(1) : '—' %></span>
+    </div>
+  </div>
+
+  <div class="metric-card">
+    <span class="metric-label">Average confidence</span>
+    <div class="metric-row">
+      <span class="metric-val a"><%= comparison.avgConfA !== null ? (comparison.avgConfA * 100).toFixed(0) + '%' : '—' %></span>
+      <span class="metric-vs">vs</span>
+      <span class="metric-val b"><%= comparison.avgConfB !== null ? (comparison.avgConfB * 100).toFixed(0) + '%' : '—' %></span>
+    </div>
+  </div>
+
+  <div class="metric-card">
+    <span class="metric-label">Unique targets scanned</span>
+    <div class="metric-row">
+      <span class="metric-val a"><%= comparison.targetsA %></span>
+      <span class="metric-vs">vs</span>
+      <span class="metric-val b"><%= comparison.targetsB %></span>
+    </div>
+  </div>
+
+  <div class="metric-card">
+    <span class="metric-label">Ground-truth matched</span>
+    <div class="metric-row">
+      <span class="metric-val a"><%= comparison.matchedA %></span>
+      <span class="metric-vs">vs</span>
+      <span class="metric-val b"><%= comparison.matchedB %></span>
+    </div>
+  </div>
+
+  <div class="metric-card">
+    <span class="metric-label">CVE overlap (Jaccard)</span>
+    <div class="metric-row">
+      <span class="metric-val"><%= comparison.cveJaccard !== null ? (comparison.cveJaccard * 100).toFixed(0) + '%' : '—' %></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Severity distribution ── -->
+<h2>Severity distribution</h2>
+<table>
+  <thead>
+    <tr><th>Severity</th><th>Scan A</th><th>Scan B</th><th>Δ</th></tr>
+  </thead>
+  <tbody>
+    <% comparison.sevBuckets.forEach(sev => { %>
+      <tr>
+        <td><span class="badge <%= sev.toLowerCase() %>"><%= sev %></span></td>
+        <td><%= comparison.sevA[sev] %></td>
+        <td><%= comparison.sevB[sev] %></td>
+        <td class="<%= comparison.sevB[sev] - comparison.sevA[sev] > 0 ? 'delta-up' : (comparison.sevB[sev] - comparison.sevA[sev] < 0 ? 'delta-down' : '') %>">
+          <%= comparison.sevB[sev] - comparison.sevA[sev] > 0 ? '+' : '' %><%= comparison.sevB[sev] - comparison.sevA[sev] %>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<!-- ── OWASP category distribution ── -->
+<% if (comparison.owaspKeys.length) { %>
+<h2>OWASP Top 10 categories</h2>
+<table>
+  <thead>
+    <tr><th>Category</th><th>Scan A</th><th>Scan B</th><th>Δ</th></tr>
+  </thead>
+  <tbody>
+    <% comparison.owaspKeys.forEach(k => { %>
+      <% const vA = comparison.owaspA[k] || 0; const vB = comparison.owaspB[k] || 0; %>
+      <tr>
+        <td class="mono"><%= k %></td>
+        <td><%= vA %></td>
+        <td><%= vB %></td>
+        <td class="<%= vB - vA > 0 ? 'delta-up' : (vB - vA < 0 ? 'delta-down' : '') %>">
+          <%= vB - vA > 0 ? '+' : '' %><%= vB - vA %>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+
+<!-- ── CWE distribution ── -->
+<% if (comparison.cweKeys.length) { %>
+<h2>CWE breakdown</h2>
+<table>
+  <thead>
+    <tr><th>CWE</th><th>Scan A</th><th>Scan B</th><th>Δ</th></tr>
+  </thead>
+  <tbody>
+    <% comparison.cweKeys.forEach(k => { %>
+      <% const vA = comparison.cweA[k] || 0; const vB = comparison.cweB[k] || 0; %>
+      <tr>
+        <td class="mono"><%= k %></td>
+        <td><%= vA %></td>
+        <td><%= vB %></td>
+        <td class="<%= vB - vA > 0 ? 'delta-up' : (vB - vA < 0 ? 'delta-down' : '') %>">
+          <%= vB - vA > 0 ? '+' : '' %><%= vB - vA %>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+
+<!-- ── CVE overlap detail ── -->
+<h2>CVE overlap</h2>
+<div class="cve-overlap">
+  <div>
+    <h3>Common (<%= comparison.cveIntersection.length %>)</h3>
+    <% if (comparison.cveIntersection.length) { %>
+      <ul><% comparison.cveIntersection.forEach(c => { %><li class="mono"><%= c %></li><% }) %></ul>
+    <% } else { %><p class="muted">No CVEs in common.</p><% } %>
+  </div>
+  <div>
+    <h3>Only in A (<%= comparison.cveOnlyA.length %>)</h3>
+    <% if (comparison.cveOnlyA.length) { %>
+      <ul><% comparison.cveOnlyA.forEach(c => { %><li class="mono"><%= c %></li><% }) %></ul>
+    <% } else { %><p class="muted">—</p><% } %>
+  </div>
+  <div>
+    <h3>Only in B (<%= comparison.cveOnlyB.length %>)</h3>
+    <% if (comparison.cveOnlyB.length) { %>
+      <ul><% comparison.cveOnlyB.forEach(c => { %><li class="mono"><%= c %></li><% }) %></ul>
+    <% } else { %><p class="muted">—</p><% } %>
+  </div>
+</div>
+
+<%- include('partials/foot') %>

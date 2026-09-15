@@ -62,10 +62,50 @@ if [[ "$chosen" -gt 1 ]]; then
   exit 1
 fi
 
+gen_secret() { openssl rand -base64 18 | tr -d '=+/'; }
+
+# Actual (project-prefixed) name of the dashboard-db volume, empty if it
+# doesn't exist yet. Matched by suffix so it's robust to the compose project
+# name (COMPOSE_PROJECT_NAME / -p / a renamed checkout dir).
+db_volume_name() {
+  docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '(^|_)dashboard-db-data$' | head -n1
+}
+
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "No .env found — generating a fresh attack-box password."
-  echo "ATTACK_BOX_PASSWORD=$(openssl rand -base64 18 | tr -d '=+/')" > "$ENV_FILE"
+  echo "No .env found — generating fresh secrets."
+  {
+    echo "ATTACK_BOX_PASSWORD=$(gen_secret)"
+    echo "DASHBOARD_PASSWORD=$(gen_secret)"
+  } > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
+fi
+# Back-fill secrets for a .env created before the dashboard existed.
+grep -q '^DASHBOARD_PASSWORD=' "$ENV_FILE" || echo "DASHBOARD_PASSWORD=$(gen_secret)" >> "$ENV_FILE"
+
+# DASHBOARD_DB_PASSWORD is special: MySQL bakes it into the dashboard-db
+# volume on that volume's FIRST init and ignores the env var forever after.
+# So minting a fresh one while the volume already exists guarantees an auth
+# mismatch — the dashboard then loops on ER_ACCESS_DENIED_ERROR. Only mint
+# one when there's no existing volume to disagree with; otherwise stop and
+# tell the user, rather than silently baking in a password nothing can use.
+if ! grep -q '^DASHBOARD_DB_PASSWORD=' "$ENV_FILE"; then
+  existing_vol=$(db_volume_name)
+  if [[ -n "$existing_vol" ]]; then
+    cat >&2 <<EOF
+ERROR: .env has no DASHBOARD_DB_PASSWORD, but the dashboard-db volume
+"$existing_vol" already exists with a password baked in from a previous run.
+A new random password would not match it, so the dashboard would fail to log
+in (ER_ACCESS_DENIED_ERROR, on a loop).
+
+Do ONE of these, then re-run ./up.sh:
+  * Put the original DASHBOARD_DB_PASSWORD line back into .env, or
+  * Reset the DB password to a new value, keeping data (see README), or
+  * Wipe the volume and reseed — DESTROYS dashboard data incl. scan runs:
+      docker compose down && docker volume rm "$existing_vol"
+EOF
+    exit 1
+  fi
+  echo "DASHBOARD_DB_PASSWORD=$(gen_secret)" >> "$ENV_FILE"
 fi
 
 # --build: without it, compose reuses whatever image is already cached for
@@ -74,6 +114,7 @@ fi
 docker compose up -d --build
 
 PASS=$(grep ATTACK_BOX_PASSWORD "$ENV_FILE" | cut -d= -f2)
+DASH_PASS=$(grep DASHBOARD_PASSWORD "$ENV_FILE" | cut -d= -f2)
 IP=$(curl -s -4 ifconfig.me || echo "<vps-ip>")
 
 echo
@@ -85,9 +126,42 @@ echo "   password:           ${PASS}"
 echo "   (browser will warn about the self-signed cert — that's expected)"
 echo
 echo " Targets are reachable only from INSIDE the attack box, by name:"
-docker compose config --services | grep -vE '^(attack-box|gate)$' | sed 's/^/   http:\/\//'
+docker compose config --services | grep -vE '^(attack-box|gate|dashboard|dashboard-db)$' | sed 's/^/   http:\/\//'
+echo
+echo " Benchmark dashboard (admin-only — NOT reachable from the attack box):"
+echo "   ssh -N -L 3010:127.0.0.1:3010 <user>@${IP}"
+echo "   then open http://127.0.0.1:3010  (user: admin, password: ${DASH_PASS})"
 echo "======================================================================"
 echo
+
+# Static guards above can't catch a DASHBOARD_DB_PASSWORD that's present but
+# was *changed* after the volume's first init (the value in .env no longer
+# matches what's baked into the volume). Verify against the live DB and warn
+# loudly, rather than leave the dashboard silently looping on access-denied.
+# (mysqladmin ping reports "alive" even on bad creds, so ping alone can't
+# tell — we do a real authenticated query as the dashboard user.)
+DB_PASS=$(grep '^DASHBOARD_DB_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)
+for _ in $(seq 1 30); do
+  docker exec vb-dashboard-db mysqladmin --silent ping >/dev/null 2>&1 && break
+  sleep 2
+done
+if docker exec vb-dashboard-db \
+     mysql -udashboard -p"$DB_PASS" -e 'SELECT 1' vuln_dashboard >/dev/null 2>&1; then
+  : # dashboard user authenticates — nothing to do
+else
+  cat >&2 <<EOF
+WARNING: dashboard-db is running but rejects the DASHBOARD_DB_PASSWORD in
+.env (access denied). This usually means .env's value was changed after the
+volume was first initialized, so the two no longer agree. The dashboard will
+loop on "Waiting for database (N/30): ER_ACCESS_DENIED_ERROR" until fixed.
+
+Do ONE of these:
+  * Restore the DASHBOARD_DB_PASSWORD that matches the existing volume, or
+  * Reset the DB password to the .env value, keeping data (see README), or
+  * Wipe the volume and reseed — DESTROYS dashboard data incl. scan runs:
+      docker compose down && docker volume rm "$(db_volume_name)"
+EOF
+fi
 
 if [[ -n "$VULHUB_RECIPE" ]]; then
   # The vulnbench network above already exists by now (docker compose up

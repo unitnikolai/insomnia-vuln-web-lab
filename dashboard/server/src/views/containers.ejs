@@ -1,0 +1,246 @@
+<%- include('partials/nav', { title: 'Fleet' }) %>
+
+<h1>Fleet management</h1>
+<p class="subtitle">Start, stop, and deploy lab containers. Spawn individual Vulhub CVE recipes or entire categories.</p>
+
+<% if (flash) { %>
+  <div class="flash-box"><%= flash %></div>
+<% } %>
+
+<% if (!dockerAvailable) { %>
+  <div class="error-box">Docker socket not available. Mount /var/run/docker.sock into the dashboard container.</div>
+<% } %>
+
+<script>
+  function refreshStatus() {
+    fetch('/api/containers')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.containers) return;
+        const map = {};
+        data.containers.forEach(c => map[c.name] = c);
+        document.querySelectorAll('[data-container]').forEach(el => {
+          const name = el.dataset.container;
+          const c = map[name];
+          const dot = el.querySelector('.status-dot');
+          const status = el.querySelector('.status-text');
+          if (dot) dot.className = 'status-dot ' + (c ? c.state : 'exited');
+          if (status) status.textContent = c ? c.status : 'Not created';
+        });
+      })
+      .catch(() => {});
+  }
+  setInterval(refreshStatus, 5000);
+
+  function toggleCategory(name) {
+    const el = document.getElementById('cat-' + name);
+    if (el) el.classList.toggle('hidden');
+  }
+</script>
+
+<!-- ══════════ Builtin labs ══════════ -->
+<h2>Builtin labs</h2>
+<table>
+  <thead>
+    <tr><th></th><th>Lab</th><th>Container</th><th>Status</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    <% builtinLabs.forEach(lab => { %>
+      <tr data-container="<%= lab.container %>">
+        <td><span class="status-dot <%= lab.container_status ? lab.container_status.state : 'exited' %>"></span></td>
+        <td><strong><%= lab.name %></strong></td>
+        <td class="mono"><%= lab.container %></td>
+        <td class="status-text"><%= lab.container_status ? lab.container_status.status : 'Not created' %></td>
+        <td class="actions">
+          <% if (lab.container_status && lab.container_status.state === 'running') { %>
+            <form method="post" action="/containers/builtin/<%= lab.service %>/stop" class="inline-form">
+              <button type="submit" class="btn btn-stop">&#9632; Stop</button>
+            </form>
+            <form method="post" action="/containers/builtin/<%= lab.service %>/restart" class="inline-form">
+              <button type="submit" class="btn btn-restart">&#8635; Restart</button>
+            </form>
+          <% } else { %>
+            <form method="post" action="/containers/builtin/<%= lab.service %>/start" class="inline-form">
+              <button type="submit" class="btn btn-start">&#9654; Start</button>
+            </form>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<!-- ══════════ Infrastructure ══════════ -->
+<h2>Infrastructure</h2>
+<table>
+  <thead>
+    <tr><th></th><th>Service</th><th>Container</th><th>Status</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    <% infra.forEach(svc => { %>
+      <tr data-container="<%= svc.container %>">
+        <td><span class="status-dot <%= svc.container_status ? svc.container_status.state : 'exited' %>"></span></td>
+        <td><strong><%= svc.name %></strong></td>
+        <td class="mono"><%= svc.container %></td>
+        <td class="status-text"><%= svc.container_status ? svc.container_status.status : 'Not created' %></td>
+        <td class="actions">
+          <% if (svc.container_status && svc.container_status.state === 'running') { %>
+            <form method="post" action="/containers/builtin/<%= svc.service %>/stop" class="inline-form">
+              <button type="submit" class="btn btn-stop">&#9632; Stop</button>
+            </form>
+            <form method="post" action="/containers/builtin/<%= svc.service %>/restart" class="inline-form">
+              <button type="submit" class="btn btn-restart">&#8635; Restart</button>
+            </form>
+          <% } else { %>
+            <form method="post" action="/containers/builtin/<%= svc.service %>/start" class="inline-form">
+              <button type="submit" class="btn btn-start">&#9654; Start</button>
+            </form>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<!-- ══════════ Vulhub ══════════ -->
+<h2>Vulhub CVE recipes</h2>
+
+<% if (!vulhubCloned) { %>
+  <div class="vulhub-setup">
+    <p>Vulhub repository not cloned yet. Clone it to browse and deploy 300+ CVE recipes.
+       Cloning also seeds ground-truth CVE benchmarks for every recipe.</p>
+    <form method="post" action="/containers/vulhub/clone">
+      <button type="submit" class="btn btn-start">&#9654; Clone Vulhub &amp; seed benchmarks</button>
+    </form>
+    <p class="muted" style="margin-top:8px">Clones <a href="https://github.com/vulhub/vulhub" target="_blank">github.com/vulhub/vulhub</a>, parses each README for CVE details, and creates ground-truth vulnerability entries.</p>
+  </div>
+<% } else { %>
+
+  <!-- Summary -->
+  <div class="metrics-grid" style="margin-bottom:16px">
+    <div class="metric-card">
+      <span class="metric-label">Categories</span>
+      <span class="metric-val a" style="display:block"><%= categories.length %></span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Total recipes</span>
+      <span class="metric-val a" style="display:block"><%= categories.reduce((s, c) => s + c.count, 0) %></span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Benchmarks seeded</span>
+      <span class="metric-val a" style="display:block"><%= seededCount %></span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Active recipes</span>
+      <span class="metric-val a" style="display:block"><%= activeRecipes.length %></span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Vulhub containers</span>
+      <span class="metric-val a" style="display:block"><%= vulhubContainers.filter(c => c.state === 'running').length %></span>
+    </div>
+  </div>
+
+  <!-- Actions bar -->
+  <div class="vulhub-controls" style="margin-bottom:20px">
+    <form method="post" action="/containers/vulhub/seed" class="inline-form">
+      <button type="submit" class="btn btn-restart">&#8635; Re-seed benchmarks</button>
+    </form>
+    <% if (activeRecipes.length > 0) { %>
+      <form method="post" action="/containers/vulhub/down-all" class="inline-form"
+            onsubmit="return confirm('Tear down ALL active Vulhub recipes?')">
+        <button type="submit" class="btn btn-stop">&#9632; Tear down all (<%= activeRecipes.length %>)</button>
+      </form>
+    <% } %>
+  </div>
+
+  <!-- Per-category sections with individual recipe rows -->
+  <% categories.forEach(cat => { %>
+    <% const activeInCat = activeRecipes.filter(r => r.startsWith(cat.name + '/')).length; %>
+    <div class="category-header" onclick="toggleCategory('<%= cat.name %>')">
+      <span class="category-toggle">&#9660;</span>
+      <strong><%= cat.name %></strong>
+      <span class="muted"> — <%= cat.count %> recipe<%= cat.count === 1 ? '' : 's' %></span>
+      <% if (activeInCat > 0) { %>
+        <span class="badge high" style="margin-left:8px"><%= activeInCat %> active</span>
+      <% } %>
+      <div class="category-actions" onclick="event.stopPropagation()">
+        <% if (activeInCat === 0) { %>
+          <form method="post" action="/containers/vulhub/category/up" class="inline-form">
+            <input type="hidden" name="category" value="<%= cat.name %>">
+            <button type="submit" class="btn btn-start btn-sm">&#9654; Deploy all</button>
+          </form>
+        <% } else { %>
+          <form method="post" action="/containers/vulhub/category/down" class="inline-form">
+            <input type="hidden" name="category" value="<%= cat.name %>">
+            <button type="submit" class="btn btn-stop btn-sm">&#9632; Tear down all</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+    <div id="cat-<%= cat.name %>" class="category-recipes hidden">
+      <table>
+        <thead>
+          <tr><th></th><th>Recipe</th><th>CVE</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          <% cat.recipes.forEach(recipe => { %>
+            <% const isActive = activeRecipes.includes(recipe); %>
+            <% const cveMatch = recipe.match(/CVE-\d{4}-\d{4,7}/i); %>
+            <tr>
+              <td><span class="status-dot <%= isActive ? 'running' : 'exited' %>"></span></td>
+              <td class="mono"><%= recipe %></td>
+              <td class="mono"><%= cveMatch ? cveMatch[0].toUpperCase() : '—' %></td>
+              <td class="actions">
+                <% if (isActive) { %>
+                  <form method="post" action="/containers/vulhub/recipe/down" class="inline-form">
+                    <input type="hidden" name="target" value="<%= recipe %>">
+                    <button type="submit" class="btn btn-stop btn-sm">&#9632; Stop</button>
+                  </form>
+                <% } else { %>
+                  <form method="post" action="/containers/vulhub/recipe/up" class="inline-form">
+                    <input type="hidden" name="target" value="<%= recipe %>">
+                    <button type="submit" class="btn btn-start btn-sm">&#9654; Deploy</button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% }) %>
+
+  <!-- Running vulhub containers -->
+  <% if (vulhubContainers.length > 0) { %>
+    <h3 style="margin-top:24px">Running Vulhub containers (<%= vulhubContainers.filter(c => c.state === 'running').length %>)</h3>
+    <table>
+      <thead>
+        <tr><th></th><th>Container</th><th>Image</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        <% vulhubContainers.forEach(c => { %>
+          <tr data-container="<%= c.name %>">
+            <td><span class="status-dot <%= c.state %>"></span></td>
+            <td class="mono"><%= c.name %></td>
+            <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= c.image %></td>
+            <td class="status-text"><%= c.status %></td>
+            <td class="actions">
+              <% if (c.state === 'running') { %>
+                <form method="post" action="/containers/<%= c.name %>/stop" class="inline-form">
+                  <button type="submit" class="btn btn-stop btn-sm">&#9632; Stop</button>
+                </form>
+              <% } else { %>
+                <form method="post" action="/containers/<%= c.name %>/start" class="inline-form">
+                  <button type="submit" class="btn btn-start btn-sm">&#9654; Start</button>
+                </form>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+
+<% } %>
+
+<%- include('partials/foot') %>

@@ -1,0 +1,13 @@
+{
+  "name": "vb-dashboard-seed-vulhub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One-off script: seed the dashboard DB with every Vulhub recipe as a ground-truth vulnerability row",
+  "main": "seed-vulhub.js",
+  "scripts": {
+    "seed": "node seed-vulhub.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.0"
+  }
+}

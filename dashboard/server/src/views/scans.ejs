@@ -1,0 +1,24 @@
+<%- include('partials/nav', { title: 'Scans' }) %>
+
+<h1>Uploaded scans</h1>
+<p class="subtitle"><%= scans.length %> scan<%= scans.length === 1 ? '' : 's' %> · <a href="/upload">upload another</a></p>
+
+<table>
+  <thead><tr><th>File</th><th>Lab</th><th>Tool</th><th>Findings</th><th>Matched</th><th>Uploaded</th></tr></thead>
+  <tbody>
+    <% scans.forEach(s => { %>
+      <tr>
+        <td><a href="/scans/<%= s.id %>"><%= s.filename %></a></td>
+        <td><%- s.lab_name ? `<a href="/labs/${s.lab_slug}">${s.lab_name}</a>` : '—' %></td>
+        <td><%= s.tool_name || '—' %></td>
+        <td><%= s.finding_count %></td>
+        <td><%= s.matched_count %></td>
+        <td><%= new Date(s.uploaded_at).toLocaleString() %></td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<% if (scans.length === 0) { %><p class="muted">No scans uploaded yet.</p><% } %>
+
+<%- include('partials/foot') %>

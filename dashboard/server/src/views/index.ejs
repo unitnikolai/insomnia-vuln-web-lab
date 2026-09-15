@@ -1,0 +1,40 @@
+<%- include('partials/nav', { title: 'Labs' }) %>
+
+<h1>Labs &amp; Vulhub recipes</h1>
+<p class="subtitle">
+  <%= labs.length %> target<%= labs.length === 1 ? '' : 's' %> tracked ·
+  <%= scanCount %> scan<%= scanCount === 1 ? '' : 's' %> uploaded ·
+  <a href="/upload">upload a scan export</a>
+</p>
+
+<div class="grid">
+  <% labs.forEach(lab => { %>
+    <a class="card" href="/labs/<%= lab.slug %>">
+      <span class="kind">
+        <% if (containerStatus[lab.slug]) { %>
+          <span class="status-dot <%= containerStatus[lab.slug].state %>"></span>
+        <% } %>
+        <%= lab.kind %><% if (lab.category) { %> · <%= lab.category %><% } %>
+      </span>
+      <h3><%= lab.name %></h3>
+      <div class="counts">
+        <span><%= lab.vuln_count %> ground-truth vuln<%= lab.vuln_count == 1 ? '' : 's' %></span>
+        <% if (lab.critical_count > 0) { %><span class="badge critical"><%= lab.critical_count %> crit</span><% } %>
+        <% if (lab.high_count > 0) { %><span class="badge high"><%= lab.high_count %> high</span><% } %>
+      </div>
+      <% if (containerStatus[lab.slug]) { %>
+        <div class="counts" style="margin-top:4px">
+          <span class="muted"><%= containerStatus[lab.slug].status %></span>
+        </div>
+      <% } %>
+    </a>
+  <% }) %>
+</div>
+
+<% if (labs.length === 0) { %>
+  <p class="muted">No labs seeded yet. The base fleet seeds automatically on first boot —
+  for Vulhub recipes, run <code>dashboard/seed/seed-vulhub.js</code> after cloning Vulhub
+  (see dashboard/README.md).</p>
+<% } %>
+
+<%- include('partials/foot') %>

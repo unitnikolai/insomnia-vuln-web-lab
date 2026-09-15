@@ -1,0 +1,219 @@
+<%- include('partials/nav', { title: 'Vulhub metrics' }) %>
+
+<h1>Vulhub &amp; CVE metrics</h1>
+<p class="subtitle">
+  CVE detection coverage across all uploaded scans.
+  <% if (!vulhubCoverage) { %>
+    Ground-truth Vulhub recipes not yet seeded — run <code>seed-vulhub.js</code> after cloning Vulhub to enable per-recipe coverage tracking.
+  <% } %>
+</p>
+
+<!-- ── Summary cards ── -->
+<div class="metrics-grid">
+  <div class="metric-card">
+    <span class="metric-label">Unique CVEs detected</span>
+    <span class="metric-val a" style="display:block"><%= cveList.length %></span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Scans uploaded</span>
+    <span class="metric-val a" style="display:block"><%= scans.length %></span>
+  </div>
+  <% if (vulhubCoverage) { %>
+    <div class="metric-card">
+      <span class="metric-label">Vulhub recipes</span>
+      <span class="metric-val a" style="display:block"><%= vulhubCoverage.totalRecipes %></span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Vulhub CVE coverage</span>
+      <span class="metric-val a" style="display:block">
+        <%= vulhubCoverage.coveredCves %> / <%= vulhubCoverage.totalWithCve %>
+      </span>
+      <div class="coverage-bar" style="margin:6px auto 0;max-width:160px">
+        <div style="width:<%= Math.round(100 * vulhubCoverage.coveredCves / Math.max(vulhubCoverage.totalWithCve, 1)) %>%"></div>
+      </div>
+    </div>
+  <% } %>
+  <div class="metric-card">
+    <span class="metric-label">CWE classes</span>
+    <span class="metric-val a" style="display:block"><%= cweRanked.length %></span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">OWASP categories</span>
+    <span class="metric-val a" style="display:block"><%= owaspRanked.length %></span>
+  </div>
+</div>
+
+<!-- ── Severity distribution ── -->
+<h2>CVE severity distribution</h2>
+<table>
+  <thead><tr><th>Severity</th><th>Count</th><th>Bar</th></tr></thead>
+  <tbody>
+    <% ['CRITICAL','HIGH','MEDIUM','LOW','INFO'].forEach(sev => { %>
+      <tr>
+        <td><span class="badge <%= sev.toLowerCase() %>"><%= sev %></span></td>
+        <td><%= sevDist[sev] %></td>
+        <td>
+          <div class="coverage-bar" style="max-width:300px">
+            <div style="width:<%= Math.round(100 * sevDist[sev] / Math.max(cveList.length, 1)) %>%;
+                         background:var(--<%= sev.toLowerCase() %>)"></div>
+          </div>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<!-- ── Per-scan CVE detection ── -->
+<h2>Per-scan CVE detection</h2>
+<table>
+  <thead><tr><th>Scan</th><th>Tool</th><th>Unique CVEs</th><th>Uploaded</th></tr></thead>
+  <tbody>
+    <% scanSummaries.filter(s => s.unique_cves > 0).forEach(s => { %>
+      <tr>
+        <td><a href="/scans/<%= s.id %>"><%= s.filename %></a></td>
+        <td><%= s.tool_name || '—' %></td>
+        <td><%= s.unique_cves %></td>
+        <td><%= new Date(s.uploaded_at).toLocaleString() %></td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<!-- ── Scanner cross-reference matrix ── -->
+<% if (allScanners.length > 1) { %>
+<h2>Scanner CVE cross-reference</h2>
+<p class="muted">Which scanners found which CVEs. Useful for evaluating scanner overlap and unique detections.</p>
+<table>
+  <thead>
+    <tr>
+      <th>CVE</th>
+      <th>CVSS</th>
+      <th>Severity</th>
+      <% allScanners.forEach(sc => { %><th><%= sc %></th><% }) %>
+    </tr>
+  </thead>
+  <tbody>
+    <% cveList.slice(0, 100).forEach(c => { %>
+      <tr>
+        <td class="mono"><%= c.cve_id %></td>
+        <td><%= c.cvss !== null ? c.cvss : '—' %></td>
+        <td><span class="badge <%= (c.severity || '').toLowerCase() %>"><%= c.severity %></span></td>
+        <% allScanners.forEach(sc => { %>
+          <td class="<%= scannerCveMatrix[sc].has(c.cve_id) ? 'matched' : 'missing' %>">
+            <%= scannerCveMatrix[sc].has(c.cve_id) ? '✓' : '—' %>
+          </td>
+        <% }) %>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+
+<!-- ── OWASP breakdown ── -->
+<% if (owaspRanked.length) { %>
+<h2>OWASP Top 10 breakdown</h2>
+<table>
+  <thead><tr><th>Category</th><th>CVEs</th><th>Bar</th></tr></thead>
+  <tbody>
+    <% owaspRanked.forEach(([cat, count]) => { %>
+      <tr>
+        <td class="mono"><%= cat %></td>
+        <td><%= count %></td>
+        <td>
+          <div class="coverage-bar" style="max-width:200px">
+            <div style="width:<%= Math.round(100 * count / Math.max(owaspRanked[0][1], 1)) %>%"></div>
+          </div>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+
+<!-- ── CWE breakdown ── -->
+<% if (cweRanked.length) { %>
+<h2>CWE weakness breakdown</h2>
+<table>
+  <thead><tr><th>CWE</th><th>CVEs</th><th>Bar</th></tr></thead>
+  <tbody>
+    <% cweRanked.forEach(([cwe, count]) => { %>
+      <tr>
+        <td class="mono"><%= cwe %></td>
+        <td><%= count %></td>
+        <td>
+          <div class="coverage-bar" style="max-width:200px">
+            <div style="width:<%= Math.round(100 * count / Math.max(cweRanked[0][1], 1)) %>%"></div>
+          </div>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+
+<!-- ── Vulhub per-category coverage (if seeded) ── -->
+<% if (vulhubCoverage) { %>
+<h2>Vulhub coverage by category</h2>
+<table>
+  <thead><tr><th>Category</th><th>Recipes</th><th>Covered</th><th>Coverage</th></tr></thead>
+  <tbody>
+    <% vulhubCoverage.categories.forEach(cat => { %>
+      <tr>
+        <td><%= cat.category %></td>
+        <td><%= cat.total %></td>
+        <td><%= cat.covered %></td>
+        <td>
+          <div class="coverage-bar" style="max-width:160px;display:inline-block;vertical-align:middle;width:100px">
+            <div style="width:<%= cat.pct %>%"></div>
+          </div>
+          <span class="muted" style="margin-left:6px"><%= cat.pct %>%</span>
+        </td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+  <% if (vulhubCoverage.uncoveredCves.length) { %>
+  <h3>Uncovered Vulhub CVEs (<%= vulhubCoverage.uncoveredCves.length %>)</h3>
+  <p class="muted">Ground-truth CVEs from Vulhub recipes not yet detected by any uploaded scan.</p>
+  <table>
+    <thead><tr><th>CVE</th><th>Recipe</th><th>Category</th></tr></thead>
+    <tbody>
+      <% vulhubCoverage.uncoveredCves.slice(0, 50).forEach(u => { %>
+        <tr>
+          <td class="mono"><%= u.cve_id %></td>
+          <td><%= u.lab_name %></td>
+          <td><%= u.lab_category || '—' %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+    <% if (vulhubCoverage.uncoveredCves.length > 50) { %>
+      <p class="muted">… and <%= vulhubCoverage.uncoveredCves.length - 50 %> more.</p>
+    <% } %>
+  <% } %>
+<% } %>
+
+<!-- ── Full CVE inventory ── -->
+<h2>All detected CVEs (<%= cveList.length %>)</h2>
+<table>
+  <thead>
+    <tr><th>CVE</th><th>Severity</th><th>CVSS</th><th>Avg conf.</th><th>CWE</th><th>OWASP</th><th>Scanners</th><th>Targets</th></tr>
+  </thead>
+  <tbody>
+    <% cveList.forEach(c => { %>
+      <tr>
+        <td class="mono"><%= c.cve_id %></td>
+        <td><span class="badge <%= (c.severity || '').toLowerCase() %>"><%= c.severity %></span></td>
+        <td><%= c.cvss !== null ? c.cvss : '—' %></td>
+        <td><%= c.avg_confidence !== null ? (c.avg_confidence * 100).toFixed(0) + '%' : '—' %></td>
+        <td class="mono"><%= c.cwe || '—' %></td>
+        <td class="mono"><%= c.owasp || '—' %></td>
+        <td><%= c.scanners.join(', ') || '—' %></td>
+        <td><%= c.target_count %></td>
+      </tr>
+    <% }) %>
+  </tbody>
+</table>
+
+<%- include('partials/foot') %>

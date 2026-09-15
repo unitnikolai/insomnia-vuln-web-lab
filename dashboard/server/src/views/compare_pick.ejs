@@ -1,0 +1,30 @@
+<%- include('partials/nav', { title: 'Compare scans' }) %>
+
+<h1>Compare two scans</h1>
+<p class="subtitle">Pick two uploads to see side-by-side benchmark metrics.</p>
+
+<form class="upload" method="get" action="/compare" style="max-width:600px">
+  <label for="a">Scan A</label>
+  <select id="a" name="a" required>
+    <option value="">— select —</option>
+    <% scans.forEach(s => { %>
+      <option value="<%= s.id %>" <%= a === s.id ? 'selected' : '' %>>
+        <%= s.filename %><% if (s.tool_name) { %> (<%= s.tool_name %>)<% } %> — <%= s.finding_count %> findings
+      </option>
+    <% }) %>
+  </select>
+
+  <label for="b">Scan B</label>
+  <select id="b" name="b" required>
+    <option value="">— select —</option>
+    <% scans.forEach(s => { %>
+      <option value="<%= s.id %>" <%= b === s.id ? 'selected' : '' %>>
+        <%= s.filename %><% if (s.tool_name) { %> (<%= s.tool_name %>)<% } %> — <%= s.finding_count %> findings
+      </option>
+    <% }) %>
+  </select>
+
+  <button type="submit">Compare</button>
+</form>
+
+<%- include('partials/foot') %>

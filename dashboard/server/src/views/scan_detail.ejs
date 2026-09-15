@@ -1,0 +1,55 @@
+<%- include('partials/nav', { title: scan.filename }) %>
+
+<p class="muted"><a href="/scans">&larr; all scans</a></p>
+<h1><%= scan.filename %></h1>
+<p class="subtitle">
+  <% if (scan.lab_name) { %>Target: <a href="/labs/<%= scan.lab_slug %>"><%= scan.lab_name %></a> · <% } %>
+  <% if (scan.tool_name) { %>Tool: <%= scan.tool_name %> · <% } %>
+  Uploaded <%= new Date(scan.uploaded_at).toLocaleString() %>
+  <% if (scan.uploaded_by) { %> by <%= scan.uploaded_by %><% } %>
+</p>
+<% if (scan.notes) { %><p><%= scan.notes %></p><% } %>
+
+<% if (coverage) { %>
+  <h2>Coverage against <%= scan.lab_name %></h2>
+  <p class="muted"><%= coverage.matched %> / <%= coverage.total %> ground-truth vulnerabilities matched by this scan.</p>
+  <div class="coverage-bar"><div style="width: <%= Math.round(100 * coverage.matched / Math.max(coverage.total,1)) %>%"></div></div>
+<% } %>
+
+<h2>Parsed findings (<%= findings.length %>)</h2>
+<% if (findings.length === 0) { %>
+  <p class="muted">No findings could be parsed from this file's shape — the raw JSON is still stored below.</p>
+<% } else { %>
+  <table>
+    <thead><tr><th>Title</th><th>CVE</th><th>Severity</th><th>CVSS</th><th>Confidence</th><th>CWE</th><th>OWASP</th><th>Target</th><th>Matched ground truth</th></tr></thead>
+    <tbody>
+      <% findings.forEach(f => { %>
+        <tr>
+          <td><%= f.title %></td>
+          <td class="mono"><%= f.cve_id || '—' %></td>
+          <td><span class="badge <%= (f.severity || 'unknown').toLowerCase() %>"><%= f.severity || 'unknown' %></span></td>
+          <td><%= f.cvss !== null && f.cvss !== undefined ? f.cvss : '—' %></td>
+          <td><%= f.confidence !== null && f.confidence !== undefined ? (f.confidence * 100).toFixed(0) + '%' : '—' %></td>
+          <td class="mono"><%= f.cwe || '—' %></td>
+          <td class="mono"><%= f.owasp || '—' %></td>
+          <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= f.target_url || '—' %></td>
+          <td>
+            <% if (f.matched_vulnerability_id) { %>
+              <span class="matched">✓ <%= f.matched_title %><% if (f.matched_cve) { %> (<%= f.matched_cve %>)<% } %></span>
+            <% } else { %>
+              <span class="missing">unmatched</span>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
+
+<h2>Raw upload</h2>
+<details>
+  <summary class="muted">Show raw JSON</summary>
+  <pre class="mono" style="white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; max-height: 500px; overflow: auto;"><%= JSON.stringify(JSON.parse(scan.raw_json), null, 2) %></pre>
+</details>
+
+<%- include('partials/foot') %>

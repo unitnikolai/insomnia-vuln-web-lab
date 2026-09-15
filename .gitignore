@@ -17,3 +17,7 @@ vulhub/
 
 # gate service — installed in its Docker build, not needed in the repo
 gate/node_modules/
+
+# dashboard — installed in its Docker build (server/) or on-demand (seed/)
+dashboard/server/node_modules/
+dashboard/seed/node_modules/

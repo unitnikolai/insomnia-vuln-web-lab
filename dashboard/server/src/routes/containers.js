@@ -1,0 +1,249 @@
+'use strict';
+
+const express = require('express');
+const docker = require('../lib/docker');
+const fleet = require('../lib/fleet');
+const { seedVulhub } = require('../lib/seedVulhub');
+const { pool } = require('../db');
+
+const router = express.Router();
+
+// ---------- Fleet management page ----------
+router.get('/containers', async (req, res, next) => {
+  try {
+    const dockerAvailable = await docker.isDockerAvailable();
+    let containers = [];
+    if (dockerAvailable) {
+      containers = await docker.listContainers();
+    }
+
+    // Build a status map by container name
+    const statusMap = {};
+    for (const c of containers) {
+      statusMap[c.name] = c;
+    }
+
+    // Builtin labs with status
+    const builtinLabs = fleet.BUILTIN_SERVICES.map((s) => ({
+      ...s,
+      container_status: statusMap[s.container] || null,
+    }));
+
+    // Infra with status
+    const infra = fleet.INFRA_SERVICES.map((s) => ({
+      ...s,
+      container_status: statusMap[s.container] || null,
+    }));
+
+    // Vulhub state
+    const vulhubCloned = fleet.isVulhubCloned();
+    let categories = [];
+    let activeRecipes = [];
+    let seededCount = 0;
+    if (vulhubCloned) {
+      categories = await fleet.listCategories();
+      activeRecipes = fleet.getActiveRecipes();
+      // Check how many vulhub labs are seeded in DB
+      const [[{ cnt }]] = await pool.query("SELECT COUNT(*) AS cnt FROM labs WHERE kind='vulhub'");
+      seededCount = cnt;
+    }
+
+    // Vulhub containers currently running (not in builtin/infra)
+    const knownNames = new Set([
+      ...fleet.BUILTIN_SERVICES.map((s) => s.container),
+      ...fleet.INFRA_SERVICES.map((s) => s.container),
+      'vb-dashboard', 'vb-dashboard-db',
+    ]);
+    const vulhubContainers = containers.filter((c) => !knownNames.has(c.name));
+
+    res.render('containers', {
+      dockerAvailable,
+      builtinLabs,
+      infra,
+      vulhubCloned,
+      categories,
+      activeRecipes,
+      vulhubContainers,
+      seededCount,
+      flash: req.query.flash || null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- Builtin lab actions ----------
+router.post('/containers/builtin/:service/start', async (req, res, next) => {
+  try {
+    const svc = fleet.BUILTIN_SERVICES.find((s) => s.service === req.params.service);
+    if (!svc) return res.status(404).render('error', { message: 'Unknown service.' });
+
+    // Try starting existing container first, fall back to docker compose up
+    try {
+      await docker.startContainer(svc.container);
+    } catch {
+      await fleet.startBuiltin(svc.service);
+    }
+    res.redirect('/containers?flash=Started ' + svc.name);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/containers/builtin/:service/stop', async (req, res, next) => {
+  try {
+    const svc = fleet.BUILTIN_SERVICES.find((s) => s.service === req.params.service)
+              || fleet.INFRA_SERVICES.find((s) => s.service === req.params.service);
+    if (!svc) return res.status(404).render('error', { message: 'Unknown service.' });
+    await docker.stopContainer(svc.container);
+    res.redirect('/containers?flash=Stopped ' + svc.name);
+  } catch (err) {
+    if (err.statusCode === 304) return res.redirect('/containers');
+    next(err);
+  }
+});
+
+router.post('/containers/builtin/:service/restart', async (req, res, next) => {
+  try {
+    const svc = fleet.BUILTIN_SERVICES.find((s) => s.service === req.params.service)
+              || fleet.INFRA_SERVICES.find((s) => s.service === req.params.service);
+    if (!svc) return res.status(404).render('error', { message: 'Unknown service.' });
+    await docker.restartContainer(svc.container);
+    res.redirect('/containers?flash=Restarted ' + svc.name);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- Container actions (any container by name) ----------
+router.post('/containers/:name/start', async (req, res, next) => {
+  try {
+    await docker.startContainer(req.params.name);
+    res.redirect('/containers');
+  } catch (err) {
+    if (err.statusCode === 304) return res.redirect('/containers');
+    next(err);
+  }
+});
+
+router.post('/containers/:name/stop', async (req, res, next) => {
+  try {
+    await docker.stopContainer(req.params.name);
+    res.redirect('/containers');
+  } catch (err) {
+    if (err.statusCode === 304) return res.redirect('/containers');
+    next(err);
+  }
+});
+
+router.post('/containers/:name/restart', async (req, res, next) => {
+  try {
+    await docker.restartContainer(req.params.name);
+    res.redirect('/containers');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- Vulhub actions ----------
+router.post('/containers/vulhub/clone', async (req, res, next) => {
+  try {
+    if (!fleet.isVulhubCloned()) {
+      await fleet.cloneVulhub();
+    }
+    // Auto-seed ground-truth after clone
+    const stats = await seedVulhub(fleet.getVulhubDir());
+    res.redirect(`/containers?flash=Vulhub cloned and seeded: ${stats.created} labs created, ${stats.updated} updated, ${stats.total} recipes`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/containers/vulhub/seed', async (req, res, next) => {
+  try {
+    if (!fleet.isVulhubCloned()) {
+      return res.status(400).render('error', { message: 'Clone Vulhub first.' });
+    }
+    const stats = await seedVulhub(fleet.getVulhubDir());
+    res.redirect(`/containers?flash=Ground-truth seeded: ${stats.created} new, ${stats.updated} updated, ${stats.errors} errors out of ${stats.total} recipes`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/containers/vulhub/recipe/up', async (req, res, next) => {
+  try {
+    const target = req.body.target;
+    if (!target) return res.status(400).render('error', { message: 'No recipe specified.' });
+    await fleet.upRecipe(target);
+    res.redirect('/containers?flash=Started recipe: ' + target);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/containers/vulhub/recipe/down', async (req, res, next) => {
+  try {
+    const target = req.body.target;
+    if (!target) return res.status(400).render('error', { message: 'No recipe specified.' });
+    await fleet.downRecipe(target);
+    res.redirect('/containers?flash=Stopped recipe: ' + target);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/containers/vulhub/category/up', async (req, res, next) => {
+  try {
+    const category = req.body.category;
+    if (!category) return res.status(400).render('error', { message: 'No category specified.' });
+    await fleet.upCategory(category);
+    res.redirect('/containers?flash=Started category: ' + category);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/containers/vulhub/category/down', async (req, res, next) => {
+  try {
+    const category = req.body.category;
+    if (!category) return res.status(400).render('error', { message: 'No category specified.' });
+    await fleet.downCategory(category);
+    res.redirect('/containers?flash=Stopped category: ' + category);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/containers/vulhub/down-all', async (req, res, next) => {
+  try {
+    await fleet.downAll();
+    res.redirect('/containers?flash=All Vulhub recipes torn down');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- JSON API for recipes list (used by recipe picker) ----------
+router.get('/api/vulhub/recipes', async (req, res, next) => {
+  try {
+    const category = req.query.category || null;
+    const recipes = await fleet.listRecipes(category);
+    res.json({ recipes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/api/containers', async (req, res, next) => {
+  try {
+    const available = await docker.isDockerAvailable();
+    if (!available) return res.json({ error: 'Docker not available', containers: [] });
+    const containers = await docker.listContainers();
+    res.json({ containers });
+  } catch (err) {
+    next(err);
+  }
+});
+
+module.exports = router;
