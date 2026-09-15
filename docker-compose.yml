@@ -1,5 +1,10 @@
 networks:
   vulnbench:
+    # Explicit, unprefixed name (compose would otherwise call it
+    # <project>_vulnbench). Vulhub recipe overrides written by vulhub.sh join
+    # this network as `external: true` by the literal name `vulnbench`, so it
+    # must exist under exactly that name for a spawned recipe to attach.
+    name: vulnbench
     driver: bridge
     ipam:
       config:
@@ -200,12 +205,20 @@ services:
       - DASHBOARD_USER=${DASHBOARD_USER:-admin}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?run ./up.sh first, or set DASHBOARD_PASSWORD in .env}
       - PORT=3000
-      - PROJECT_ROOT=/project
+      # Must equal the bind-mount target below AND the repo's real host path,
+      # so that when the dashboard shells out to vulhub.sh/`docker compose`
+      # against the host daemon, the `./`-relative bind mounts in Vulhub
+      # recipes resolve to a path that exists identically on host and in this
+      # container. up.sh writes PROJECT_DIR=<host repo path> into .env.
+      - PROJECT_ROOT=${PROJECT_DIR:-/project}
     ports:
       - "127.0.0.1:3010:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - .:/project
+      # Mounted at the repo's REAL host path (not a fixed /project) so bind
+      # mounts in Vulhub recipes the dashboard spawns line up on both sides —
+      # see PROJECT_ROOT above. Falls back to /project if PROJECT_DIR is unset.
+      - .:${PROJECT_DIR:-/project}
     depends_on:
       dashboard-db:
         condition: service_healthy

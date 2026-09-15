@@ -113,6 +113,18 @@ EOF
   echo "DASHBOARD_DB_PASSWORD=$(gen_secret)" >> "$ENV_FILE"
 fi
 
+# Record this checkout's absolute host path so the dashboard can bind-mount the
+# repo at the SAME path it has on the host. The dashboard shells out to
+# vulhub.sh/`docker compose` against the host daemon, and `./`-relative bind
+# mounts in Vulhub recipes are resolved by that daemon on the host — they only
+# line up if the repo lives at one identical path on both sides. Refreshed each
+# run in case the checkout moved; `|| true` guards the no-match grep under set -e.
+tmp_env=$(mktemp)
+grep -v '^PROJECT_DIR=' "$ENV_FILE" > "$tmp_env" || true
+echo "PROJECT_DIR=$(pwd)" >> "$tmp_env"
+cat "$tmp_env" > "$ENV_FILE"
+rm -f "$tmp_env"
+
 # --build: without it, compose reuses whatever image is already cached for
 # attack-box and silently ignores any Dockerfile changes since that image
 # was last built.
