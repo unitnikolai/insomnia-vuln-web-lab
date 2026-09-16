@@ -50,8 +50,10 @@ const SLUG_TO_CONTAINER = {
   'dvga':        'vb-dvga',
   'webgoat':     'vb-webgoat',
   // infra containers (not labs, but useful to show)
-  '_attack-box': 'vb-attack-box',
-  '_gate':       'vb-gate',
+  '_attack-box':   'vb-attack-box',
+  '_gate':         'vb-gate',
+  '_dashboard':    'vb-dashboard',
+  '_dashboard-db': 'vb-dashboard-db',
 };
 
 // Reverse lookup
@@ -69,6 +71,17 @@ async function listContainers() {
     const name = (c.Names || [])[0]?.replace(/^\//, '') || '';
     if (!name.startsWith(PREFIX)) continue;
 
+    // Per-network IPs. The Docker list endpoint only populates IPAddress for
+    // running containers, so stopped ones naturally come back with no IP —
+    // which matches "show the IP once it's live". Prefer the `vulnbench`
+    // network's IP as the primary, since that's the address the attack-box
+    // uses to reach a target; fall back to whatever network it's on.
+    const netObj = (c.NetworkSettings && c.NetworkSettings.Networks) || {};
+    const networks = Object.entries(netObj)
+      .map(([network, cfg]) => ({ network, ip: (cfg && cfg.IPAddress) || null }))
+      .filter((n) => n.ip);
+    const primaryNet = networks.find((n) => n.network === 'vulnbench') || networks[0] || null;
+
     results.push({
       name,
       slug: CONTAINER_TO_SLUG[name] || name.replace(PREFIX, ''),
@@ -76,6 +89,8 @@ async function listContainers() {
       state: c.State,     // running, exited, created, paused, etc.
       status: c.Status,   // "Up 2 hours", "Exited (0) 3 days ago", etc.
       image: c.Image,
+      ip: primaryNet ? primaryNet.ip : null,
+      networks,           // [{ network, ip }, ...] — all attached networks with an IP
       ports: (c.Ports || []).map((p) => ({
         private: p.PrivatePort,
         public: p.PublicPort || null,

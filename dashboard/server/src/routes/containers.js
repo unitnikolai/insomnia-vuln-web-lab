@@ -75,7 +75,8 @@ router.get('/containers', async (req, res, next) => {
 // ---------- Builtin lab actions ----------
 router.post('/containers/builtin/:service/start', async (req, res, next) => {
   try {
-    const svc = fleet.BUILTIN_SERVICES.find((s) => s.service === req.params.service);
+    const svc = fleet.BUILTIN_SERVICES.find((s) => s.service === req.params.service)
+              || fleet.INFRA_SERVICES.find((s) => s.service === req.params.service);
     if (!svc) return res.status(404).render('error', { message: 'Unknown service.' });
 
     // Try starting existing container first, fall back to docker compose up

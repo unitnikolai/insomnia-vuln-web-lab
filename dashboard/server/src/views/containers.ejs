@@ -24,8 +24,17 @@
           const c = map[name];
           const dot = el.querySelector('.status-dot');
           const status = el.querySelector('.status-text');
+          const ip = el.querySelector('.container-ip');
           if (dot) dot.className = 'status-dot ' + (c ? c.state : 'exited');
           if (status) status.textContent = c ? c.status : 'Not created';
+          if (ip) {
+            ip.textContent = (c && c.ip) ? c.ip : '—';
+            if (c && c.networks && c.networks.length) {
+              ip.title = c.networks.map(n => n.network + ': ' + n.ip).join('\n');
+            } else {
+              ip.removeAttribute('title');
+            }
+          }
         });
       })
       .catch(() => {});
@@ -42,7 +51,7 @@
 <h2>Builtin labs</h2>
 <table>
   <thead>
-    <tr><th></th><th>Lab</th><th>Container</th><th>Status</th><th>Actions</th></tr>
+    <tr><th></th><th>Lab</th><th>Container</th><th>Status</th><th>IP</th><th>Actions</th></tr>
   </thead>
   <tbody>
     <% builtinLabs.forEach(lab => { %>
@@ -51,6 +60,7 @@
         <td><strong><%= lab.name %></strong></td>
         <td class="mono"><%= lab.container %></td>
         <td class="status-text"><%= lab.container_status ? lab.container_status.status : 'Not created' %></td>
+        <td class="mono container-ip" <% if (lab.container_status && lab.container_status.networks && lab.container_status.networks.length) { %>title="<%= lab.container_status.networks.map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= lab.container_status && lab.container_status.ip ? lab.container_status.ip : '—' %></td>
         <td class="actions">
           <% if (lab.container_status && lab.container_status.state === 'running') { %>
             <form method="post" action="/containers/builtin/<%= lab.service %>/stop" class="inline-form">
@@ -74,7 +84,7 @@
 <h2>Infrastructure</h2>
 <table>
   <thead>
-    <tr><th></th><th>Service</th><th>Container</th><th>Status</th><th>Actions</th></tr>
+    <tr><th></th><th>Service</th><th>Container</th><th>Status</th><th>IP</th><th>Actions</th></tr>
   </thead>
   <tbody>
     <% infra.forEach(svc => { %>
@@ -83,6 +93,7 @@
         <td><strong><%= svc.name %></strong></td>
         <td class="mono"><%= svc.container %></td>
         <td class="status-text"><%= svc.container_status ? svc.container_status.status : 'Not created' %></td>
+        <td class="mono container-ip" <% if (svc.container_status && svc.container_status.networks && svc.container_status.networks.length) { %>title="<%= svc.container_status.networks.map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= svc.container_status && svc.container_status.ip ? svc.container_status.ip : '—' %></td>
         <td class="actions">
           <% if (svc.container_status && svc.container_status.state === 'running') { %>
             <form method="post" action="/containers/builtin/<%= svc.service %>/stop" class="inline-form">
@@ -215,7 +226,7 @@
     <h3 style="margin-top:24px">Running Vulhub containers (<%= vulhubContainers.filter(c => c.state === 'running').length %>)</h3>
     <table>
       <thead>
-        <tr><th></th><th>Container</th><th>Image</th><th>Status</th><th>Actions</th></tr>
+        <tr><th></th><th>Container</th><th>Image</th><th>Status</th><th>IP</th><th>Actions</th></tr>
       </thead>
       <tbody>
         <% vulhubContainers.forEach(c => { %>
@@ -224,6 +235,7 @@
             <td class="mono"><%= c.name %></td>
             <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= c.image %></td>
             <td class="status-text"><%= c.status %></td>
+            <td class="mono container-ip" <% if (c.networks && c.networks.length) { %>title="<%= c.networks.map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= c.ip ? c.ip : '—' %></td>
             <td class="actions">
               <% if (c.state === 'running') { %>
                 <form method="post" action="/containers/<%= c.name %>/stop" class="inline-form">

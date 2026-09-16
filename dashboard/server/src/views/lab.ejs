@@ -14,6 +14,15 @@
     <strong><%= container.Name ? container.Name.replace(/^\//, '') : '—' %></strong>
     &nbsp;—&nbsp;
     <span class="muted"><%= container.State ? container.State.Status : 'unknown' %></span>
+    <% if (container.State && container.State.Status === 'running') {
+         const nets = (container.NetworkSettings && container.NetworkSettings.Networks) || {};
+         const ipList = Object.entries(nets)
+           .map(([n, cfg]) => ({ network: n, ip: cfg && cfg.IPAddress }))
+           .filter((x) => x.ip);
+         const primaryIp = ipList.find((x) => x.network === 'vulnbench') || ipList[0];
+         if (primaryIp) { %>
+      &nbsp;—&nbsp;<span class="mono" title="<%= ipList.map((x) => x.network + ': ' + x.ip).join('\n') %>">IP <%= primaryIp.ip %></span>
+    <% } } %>
     <% if (container.State && container.State.Status === 'running') { %>
       <form method="post" action="/containers/<%= container.Name ? container.Name.replace(/^\//, '') : '' %>/stop" class="inline-form">
         <button type="submit" class="btn btn-stop">&#9632; Stop</button>

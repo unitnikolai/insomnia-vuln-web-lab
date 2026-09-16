@@ -162,8 +162,10 @@ const BUILTIN_SERVICES = [
 ];
 
 const INFRA_SERVICES = [
-  { slug: '_attack-box', name: 'Attack Box (Kali)',  container: 'vb-attack-box', service: 'attack-box' },
-  { slug: '_gate',       name: 'Access Gate',        container: 'vb-gate',       service: 'gate' },
+  { slug: '_attack-box',   name: 'Attack Box (Kali)',    container: 'vb-attack-box',   service: 'attack-box' },
+  { slug: '_gate',         name: 'Access Gate',          container: 'vb-gate',         service: 'gate' },
+  { slug: '_dashboard',    name: 'Benchmark Dashboard',  container: 'vb-dashboard',    service: 'dashboard' },
+  { slug: '_dashboard-db', name: 'Dashboard DB',         container: 'vb-dashboard-db', service: 'dashboard-db' },
 ];
 
 // Start a builtin service via docker compose
