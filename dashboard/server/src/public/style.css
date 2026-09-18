@@ -354,3 +354,61 @@ td.actions { white-space: nowrap; }
 }
 td.container-ports { line-height: 1.7; }
 td.container-ports .muted { margin-left: 6px; font-size: 11px; }
+
+/* ── CVE validation tracking ── */
+.progress {
+  height: 9px;
+  background: rgba(139,147,167,0.18);
+  border-radius: 999px;
+  overflow: hidden;
+  width: 100%;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--ok);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+/* Nothing confirmed yet reads as "not started", not as a broken bar */
+.progress-fill.zero { background: rgba(139,147,167,0.45); }
+.progress.sm { height: 6px; width: 110px; flex: 0 0 110px; }
+
+.coverage-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+.coverage-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.coverage-pct { font-size: 26px; font-weight: 700; color: var(--ok); }
+.coverage-pct.zero { color: var(--muted); }
+.coverage-sub { font-size: 12px; color: var(--muted); }
+.coverage-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 11px; color: var(--muted); }
+
+/* The checkmark that ticks a recipe off once a scan has confirmed its CVE */
+.check { font-size: 14px; line-height: 1; }
+.check.found   { color: var(--ok); }
+.check.partial { color: var(--medium); }
+.check.missing { color: var(--muted); opacity: 0.55; }
+.check.na      { color: var(--muted); opacity: 0.3; }
+
+/* A CVE we inferred from README prose rather than read off the directory */
+.cve-inferred { border-bottom: 1px dotted var(--medium); cursor: help; }
+
+.cat-coverage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.category-actions { margin-left: 12px; }

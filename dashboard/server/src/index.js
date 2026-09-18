@@ -4,11 +4,15 @@ const path = require('path');
 const express = require('express');
 const basicAuth = require('express-basic-auth');
 const { waitForDb } = require('./db');
+const { ensureSchema } = require('./lib/migrate');
 
 const PORT = process.env.PORT || 3000;
 
 async function main() {
   await waitForDb();
+  // db/init only runs against an empty data dir, so an existing deployment
+  // needs the newer columns applied here before any route touches them.
+  await ensureSchema();
 
   const app = express();
   app.set('view engine', 'ejs');

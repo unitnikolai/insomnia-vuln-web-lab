@@ -72,6 +72,57 @@ them each run.
 
   Safe to re-run — recipes are upserted by slug, not duplicated.
 
+  The Fleet page's **Re-seed benchmarks** button does the same thing from the
+  UI, against the clone the dashboard already has mounted.
+
+## CVE validation tracking
+
+The Fleet page (`/containers`) tracks which of the lab's CVEs a scan has
+actually turned up, so each recipe can be ticked off as it's validated:
+
+- **A progress bar and percentage** over the whole collection, with the same
+  per-module bar on every category header (`2/8 CVEs · 25%`).
+- **A marker on every recipe** — green when a scan *aimed at that recipe*
+  found its CVE, amber when the CVE turned up but not from a scan of that
+  recipe (a scan uploaded with no lab selected, or a sibling recipe sharing
+  the CVE — s2-045 and s2-046 are both CVE-2017-5638), an open circle when
+  it's still to find, and a dash when the recipe has no CVE to match at all.
+- **Expected vs. found per module**, listing each recipe's expected CVE
+  alongside the scans that confirmed it.
+
+Percentages are over recipes that *have* a CVE. 68 of the 330 recipes name no
+CVE anywhere (`aria2/rce`, `fastjson/1.2.47-rce`, …); counting those as
+permanent misses would cap the bar below 80% forever, so they're reported
+separately as untrackable rather than folded into the score.
+
+Attribution matters for the green tick: upload a scan with the matching
+Vulhub lab selected, or its findings can only ever reach amber.
+
+### Where the expected CVE comes from
+
+Only 249 of the 330 recipes carry a CVE in their directory name. The rest are
+named for the vendor's own advisory id — all of `struts2/s2-0XX`, for
+instance — and state the CVE in the README instead, so the seeder reads it
+from there and records which it used:
+
+| Source | Recipes | Confidence |
+|---|---|---|
+| Directory name (`log4j/CVE-2021-44228`) | 249 | exact |
+| README `#` title (`# S2-045 … (CVE-2017-5638)`) | 9 | exact |
+| README body, and only when the whole file mentions exactly one CVE | 4 | inferred — shown dotted-underlined |
+| No CVE anywhere | 68 | untrackable |
+
+That takes trackable recipes from 249 to 262. The body case is deliberately
+narrow: `nginx/insecure-configuration` is about three misconfigurations and
+merely *links* to a CVE, so anything mentioning more than one distinct CVE is
+left blank rather than guessed at.
+
+**Existing deployments need a re-seed** to pick up the README-derived CVEs —
+until then those recipes show `?` (not in the seeded answer key). The
+`cve_source` column is added automatically at startup for databases created
+before it existed (`server/src/lib/migrate.js`), since `db/init` only runs
+against an empty data directory.
+
 ## Upload format (upload feature — structure still TBD)
 
 `POST /upload` (multipart form: `scanFile`, optional `lab_id`, `tool_name`,

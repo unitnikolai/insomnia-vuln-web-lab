@@ -37,12 +37,41 @@ function extractCve(name) {
   return m ? m[0].toUpperCase() : null;
 }
 
+// Work out which CVE a recipe is actually *about*, and how confident we are.
+//
+// Only about three quarters of upstream recipes name their CVE in the
+// directory (log4j/CVE-2021-44228). The rest are named for the vendor's own
+// advisory id (struts2/s2-045) and state the CVE in the README title, which
+// is just as authoritative. A last handful mention it only in prose.
+//
+// Prose is the weak case: nginx/insecure-configuration is about three
+// misconfigurations and merely *links* to a CVE, so attributing that CVE to
+// the recipe would be wrong. It's accepted only when the whole README
+// mentions exactly one distinct CVE — that rules out picking one advisory
+// out of a list — and is reported as 'readme-body' so the UI can present it
+// as inferred rather than certain.
+function resolveCve(recipeName, target, readmeText) {
+  const fromDir = extractCve(recipeName) || extractCve(target);
+  if (fromDir) return { cve: fromDir, source: 'dirname' };
+  if (!readmeText) return { cve: null, source: null };
+
+  const titleLine = readmeText.split(/\r?\n/).find((l) => l.startsWith('# '));
+  const fromTitle = titleLine ? extractCve(titleLine) : null;
+  if (fromTitle) return { cve: fromTitle, source: 'readme-title' };
+
+  const all = readmeText.match(new RegExp(CVE_RE.source, 'gi')) || [];
+  const distinct = [...new Set(all.map((c) => c.toUpperCase()))];
+  if (distinct.length === 1) return { cve: distinct[0], source: 'readme-body' };
+
+  return { cve: null, source: null };
+}
+
 function slugify(target) {
   return target.toLowerCase().replace(/\//g, '-').replace(/[^a-z0-9-]/g, '-');
 }
 
 function parseReadme(readmePath) {
-  if (!fs.existsSync(readmePath)) return { title: null, description: null, references: [] };
+  if (!fs.existsSync(readmePath)) return { title: null, description: null, references: [], text: null };
 
   const text = fs.readFileSync(readmePath, 'utf8');
   const lines = text.split(/\r?\n/);
@@ -71,7 +100,7 @@ function parseReadme(readmePath) {
     }
   }
 
-  return { title, description, references };
+  return { title, description, references, text };
 }
 
 function findRecipes(vulhubDir) {
@@ -101,9 +130,9 @@ async function seedVulhub(vulhubDir) {
   for (const recipe of recipes) {
     try {
       const slug = `vulhub-${slugify(recipe.target)}`;
-      const cve = extractCve(recipe.recipeName) || extractCve(recipe.target);
       const readmePath = path.join(vulhubDir, recipe.target, 'README.md');
-      const { title: readmeTitle, description, references } = parseReadme(readmePath);
+      const { title: readmeTitle, description, references, text } = parseReadme(readmePath);
+      const { cve, source: cveSource } = resolveCve(recipe.recipeName, recipe.target, text);
 
       // Use README title if available, else construct from target
       const displayTitle = readmeTitle || `Vulhub: ${recipe.target}`;
@@ -143,16 +172,16 @@ async function seedVulhub(vulhubDir) {
 
       if (existingVuln.length) {
         await pool.query(
-          `UPDATE vulnerabilities SET cve_id=?, category=?, severity=?,
+          `UPDATE vulnerabilities SET cve_id=?, cve_source=?, category=?, severity=?,
            description=?, exploit_notes=?, reference_url=? WHERE id=?`,
-          [cve, recipe.category, severity, description, refText, referenceUrl, existingVuln[0].id]
+          [cve, cveSource, recipe.category, severity, description, refText, referenceUrl, existingVuln[0].id]
         );
       } else {
         await pool.query(
           `INSERT INTO vulnerabilities
-             (lab_id, cve_id, title, category, severity, description, exploit_notes, reference_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [labId, cve, vulnTitle, recipe.category, severity, description, refText, referenceUrl]
+             (lab_id, cve_id, cve_source, title, category, severity, description, exploit_notes, reference_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [labId, cve, cveSource, vulnTitle, recipe.category, severity, description, refText, referenceUrl]
         );
       }
     } catch (err) {
@@ -164,4 +193,4 @@ async function seedVulhub(vulhubDir) {
   return stats;
 }
 
-module.exports = { seedVulhub, findRecipes, parseReadme };
+module.exports = { seedVulhub, findRecipes, parseReadme, resolveCve };

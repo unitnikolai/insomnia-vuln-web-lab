@@ -4,6 +4,7 @@ const express = require('express');
 const docker = require('../lib/docker');
 const fleet = require('../lib/fleet');
 const { seedVulhub } = require('../lib/seedVulhub');
+const { getCveCoverage, labSlugFor } = require('../lib/coverage');
 const { pool } = require('../db');
 
 const router = express.Router();
@@ -44,6 +45,7 @@ router.get('/containers', async (req, res, next) => {
     let activeRecipes = [];
     let recipeFleet = [];
     let seededCount = 0;
+    let coverage = null;
     if (vulhubCloned) {
       categories = await fleet.listCategories();
       // Live Docker state is the source of truth for what's actually up; the
@@ -55,6 +57,21 @@ router.get('/containers', async (req, res, next) => {
       // Check how many vulhub labs are seeded in DB
       const [[{ cnt }]] = await pool.query("SELECT COUNT(*) AS cnt FROM labs WHERE kind='vulhub'");
       seededCount = cnt;
+      // The answer key plus what scans have actually confirmed so far.
+      coverage = await getCveCoverage();
+    }
+
+    // Recipes are addressed by target ("struts2/s2-045") everywhere on this
+    // page, but the answer key is keyed by lab slug. The mapping is one-way,
+    // so build it forwards from the targets we're about to render.
+    const cveByTarget = {};
+    if (coverage) {
+      for (const cat of categories) {
+        for (const target of cat.recipes) {
+          const row = coverage.bySlug.get(labSlugFor(target));
+          if (row) cveByTarget[target] = row;
+        }
+      }
     }
 
     // Keyed by target so the per-category recipe rows can show live status
@@ -91,6 +108,8 @@ router.get('/containers', async (req, res, next) => {
       recipeStatus,
       otherContainers,
       seededCount,
+      coverage,
+      cveByTarget,
       flash: req.query.flash || null,
     });
   } catch (err) {

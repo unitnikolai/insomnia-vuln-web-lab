@@ -73,6 +73,51 @@
   }
 </script>
 
+<%
+  // One place decides how a recipe's validation state is drawn, so the three
+  // tables below can't drift apart. `cov` is a row from lib/coverage.js.
+  function tick(cov, fallbackCve) {
+    // No answer-key row at all is a different thing from a recipe that has no
+    // CVE: the first means nothing has been seeded for it yet (re-seed and it
+    // starts tracking), the second means there is genuinely nothing to find.
+    // Saying "no CVE in README" for the former would be a false claim, and
+    // reads as a contradiction next to a CVE in the very next column.
+    if (!cov) {
+      const what = fallbackCve
+        ? fallbackCve + ' is not in the seeded answer key yet'
+        : 'This recipe is not in the seeded answer key yet';
+      return '<span class="check na" title="' + what + ' — use \u201cRe-seed benchmarks\u201d above to start tracking it.">?</span>';
+    }
+    if (!cov.expected) {
+      return '<span class="check na" title="This recipe\'s README names no CVE, so there is nothing to match a finding against — excluded from the percentages.">–</span>';
+    }
+    if (!cov.found) {
+      return '<span class="check missing" title="Expected ' + cov.cve + ' — not seen in any uploaded scan yet.">&#9675;</span>';
+    }
+    const where = cov.scans.map(sc => '#' + sc.id + (sc.tool ? ' (' + sc.tool + ')' : '')).join(', ');
+    if (cov.attributed) {
+      return '<span class="check found" title="Validated: ' + cov.cve + ' was found by scan ' + where + ', run against this recipe.">&#10003;</span>';
+    }
+    const why = cov.via === 'cve'
+      ? ' (another recipe shares this CVE)'
+      : ' (that scan had no lab selected, or targeted a different one)';
+    return '<span class="check partial" title="' + cov.cve + ' turned up in scan ' + where + ', but not from a scan aimed at this recipe' + why + ' — weaker evidence.">&#10003;</span>';
+  }
+
+  function cveCell(cov, fallbackCve) {
+    const cve = (cov && cov.cve) || fallbackCve;
+    if (!cve) return '<span class="muted">&mdash;</span>';
+    if (cov && cov.inferred) {
+      return '<span class="cve-inferred" title="Inferred from the README body rather than the directory name or README title — the recipe may be about something broader than this CVE.">' + cve + '</span>';
+    }
+    return cve;
+  }
+
+  function bar(pct, extraClass) {
+    const cls = 'progress-fill' + (pct === 0 ? ' zero' : '');
+    return '<div class="progress ' + (extraClass || '') + '"><div class="' + cls + '" style="width:' + pct + '%"></div></div>';
+  }
+%>
 <!-- ══════════ Builtin labs ══════════ -->
 <h2>Builtin labs</h2>
 <table>
@@ -157,12 +202,13 @@
   <table>
     <thead>
       <tr>
-        <th></th><th>Recipe</th><th>CVE</th><th>Service</th>
+        <th></th><th>Recipe</th><th title="Confirmed by an uploaded scan">&#10003;</th><th>Expected CVE</th><th>Service</th>
         <th>Status</th><th>IP</th><th>Reachable at</th><th>Actions</th>
       </tr>
     </thead>
     <tbody>
       <% recipeFleet.forEach(r => { %>
+        <% const rcov = cveByTarget[r.target]; %>
         <% r.containers.forEach((c, i) => { %>
           <tr data-container="<%= c.name %>">
             <td><span class="status-dot <%= c.state %>"></span></td>
@@ -180,7 +226,15 @@
                   </form>
                 </div>
               </td>
-              <td class="mono" rowspan="<%= r.total %>"><%= r.cve || '—' %></td>
+              <td rowspan="<%= r.total %>"><%- tick(rcov, r.cve) %></td>
+              <td class="mono" rowspan="<%= r.total %>">
+                <%- cveCell(rcov, r.cve) %>
+                <% if (rcov && rcov.found) { %>
+                  <div style="margin-top:4px">
+                    <% rcov.scans.slice(0, 2).forEach((sc, k) => { %><%= k ? ', ' : '' %><a href="/scans/<%= sc.id %>" class="muted">#<%= sc.id %></a><% }) %>
+                  </div>
+                <% } %>
+              </td>
             <% } %>
             <td class="mono"><%= c.service %></td>
             <td class="status-text"><%= c.status %></td>
@@ -215,10 +269,14 @@
         <% }) %>
       <% }) %>
       <% staleRecipes.forEach(target => { %>
+        <% const m = target.match(/CVE-\d{4}-\d{4,7}/i); %>
+        <% const staleCve = m ? m[0].toUpperCase() : null; %>
+        <% const staleCov = cveByTarget[target]; %>
         <tr>
           <td><span class="status-dot exited"></span></td>
           <td><strong class="mono"><%= target %></strong></td>
-          <td class="mono"><% const m = target.match(/CVE-\d{4}-\d{4,7}/i); %><%= m ? m[0].toUpperCase() : '—' %></td>
+          <td><%- tick(staleCov, staleCve) %></td>
+          <td class="mono"><%- cveCell(staleCov, staleCve) %></td>
           <td class="muted" colspan="4">Tracked as active, but no containers are left — stop it to clean up.</td>
           <td class="actions">
             <form method="post" action="/containers/vulhub/recipe/down" class="inline-form">
@@ -270,6 +328,36 @@
     </div>
   </div>
 
+  <!-- CVE validation tracking -->
+  <% if (coverage && coverage.totals.total > 0) { %>
+    <% const t = coverage.totals; %>
+    <div class="coverage-panel">
+      <div class="coverage-headline">
+        <span class="coverage-pct <%= t.pct === 0 ? 'zero' : '' %>"><%= t.pct %>%</span>
+        <strong><%= t.validated %> of <%= t.withCve %> CVEs validated</strong>
+        <span class="coverage-sub">
+          confirmed by an uploaded scan
+          <% if (t.untrackable > 0) { %>
+            · <%= t.untrackable %> recipe<%= t.untrackable === 1 ? '' : 's' %> have no CVE to match, excluded
+          <% } %>
+        </span>
+      </div>
+      <%- bar(t.pct) %>
+      <div class="coverage-legend">
+        <span><span class="check found">&#10003;</span> <%= t.attributed %> confirmed by a scan of that recipe</span>
+        <span><span class="check partial">&#10003;</span> <%= t.unattributed %> CVE seen, but not from a scan of it</span>
+        <span><span class="check missing">&#9675;</span> <%= t.withCve - t.validated %> still to find</span>
+        <span><span class="check na">–</span> <%= t.untrackable %> no CVE in README</span>
+      </div>
+      <% if (t.validated === 0) { %>
+        <p class="coverage-sub" style="margin:10px 0 0">
+          Nothing confirmed yet — <a href="/upload">upload a scan</a> and pick the matching
+          Vulhub lab so its findings are attributed to that recipe.
+        </p>
+      <% } %>
+    </div>
+  <% } %>
+
   <!-- Actions bar -->
   <div class="vulhub-controls" style="margin-bottom:20px">
     <form method="post" action="/containers/vulhub/seed" class="inline-form">
@@ -293,6 +381,13 @@
       <% if (activeInCat > 0) { %>
         <span class="badge high" style="margin-left:8px"><%= activeInCat %> active</span>
       <% } %>
+      <% const cc = coverage ? coverage.byCategory.get(cat.name) : null; %>
+      <% if (cc && cc.withCve > 0) { %>
+        <div class="cat-coverage" title="<%= cc.validated %> of <%= cc.withCve %> CVEs in this module confirmed by a scan<%= cc.untrackable ? ' (' + cc.untrackable + ' recipe(s) have no CVE)' : '' %>">
+          <%- bar(cc.pct, 'sm') %>
+          <span><%= cc.validated %>/<%= cc.withCve %> CVEs · <%= cc.pct %>%</span>
+        </div>
+      <% } %>
       <div class="category-actions" onclick="event.stopPropagation()">
         <% if (activeInCat === 0) { %>
           <form method="post" action="/containers/vulhub/category/up" class="inline-form">
@@ -310,20 +405,30 @@
     <div id="cat-<%= cat.name %>" class="category-recipes hidden">
       <table>
         <thead>
-          <tr><th></th><th>Recipe</th><th>CVE</th><th>Status</th><th>IP</th><th>Reachable at</th><th>Actions</th></tr>
+          <tr><th></th><th>Recipe</th><th title="Confirmed by an uploaded scan">&#10003;</th><th>Expected CVE</th><th>Found in</th><th>Status</th><th>IP</th><th>Actions</th></tr>
         </thead>
         <tbody>
           <% cat.recipes.forEach(recipe => { %>
             <% const live = recipeStatus[recipe]; %>
+            <% const cov = cveByTarget[recipe]; %>
             <% const isActive = !!live || activeRecipes.includes(recipe); %>
             <% const cveMatch = recipe.match(/CVE-\d{4}-\d{4,7}/i); %>
             <tr>
               <td><span class="status-dot <%= live ? live.state : (isActive ? 'created' : 'exited') %>"></span></td>
               <td class="mono"><%= recipe %></td>
-              <td class="mono"><%= cveMatch ? cveMatch[0].toUpperCase() : '—' %></td>
+              <td><%- tick(cov, cveMatch ? cveMatch[0].toUpperCase() : null) %></td>
+              <td class="mono"><%- cveCell(cov, cveMatch ? cveMatch[0].toUpperCase() : null) %></td>
+              <td>
+                <% if (cov && cov.found) { %>
+                  <% cov.scans.slice(0, 3).forEach((sc, k) => { %><%= k ? ', ' : '' %><a href="/scans/<%= sc.id %>">#<%= sc.id %></a><% if (sc.tool) { %> <span class="muted"><%= sc.tool %></span><% } %><% }) %>
+                  <% if (cov.scans.length > 3) { %> <span class="muted">+<%= cov.scans.length - 3 %></span><% } %>
+                <% } else { %><span class="muted">—</span><% } %>
+              </td>
               <td>
                 <% if (live) { %>
-                  <%= live.running %>/<%= live.total %> container<%= live.total === 1 ? '' : 's' %> up
+                  <%= live.running %>/<%= live.total %> up
+                  <% const addrs = live.containers.flatMap(c => c.endpoints.map(e => e.addr)); %>
+                  <% if (addrs.length) { %><br><span class="endpoint"><%= addrs[0] %></span><% } %>
                 <% } else if (isActive) { %>
                   <span class="muted">tracked, no containers</span>
                 <% } else { %>
@@ -333,16 +438,6 @@
               <td class="mono">
                 <% if (live) { %>
                   <%= live.containers.map(c => c.ip).filter(Boolean).join(', ') || '—' %>
-                <% } else { %>—<% } %>
-              </td>
-              <td class="mono">
-                <% if (live) { %>
-                  <% const addrs = live.containers.flatMap(c => c.endpoints.map(e => e.addr)); %>
-                  <% if (addrs.length) { %>
-                    <%- addrs.map(a => '<span class="endpoint">' + a + '</span>').join('<br>') %>
-                  <% } else { %>
-                    <%= live.containers.map(c => c.host).join(', ') %>
-                  <% } %>
                 <% } else { %>—<% } %>
               </td>
               <td class="actions">
