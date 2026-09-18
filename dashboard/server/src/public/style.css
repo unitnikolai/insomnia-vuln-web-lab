@@ -341,3 +341,16 @@ td.actions { white-space: nowrap; }
 .category-recipes table { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
 
 .btn-sm { padding: 3px 8px; font-size: 11px; }
+
+/* A recipe service is only partly up (some containers running, some not) */
+.status-dot.partial { background: var(--medium); box-shadow: 0 0 6px rgba(255,209,102,0.5); }
+
+/* host:port a scanner can be pointed at */
+.endpoint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+td.container-ports { line-height: 1.7; }
+td.container-ports .muted { margin-left: 6px; font-size: 11px; }

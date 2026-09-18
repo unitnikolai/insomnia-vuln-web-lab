@@ -14,7 +14,10 @@ router.get('/containers', async (req, res, next) => {
     const dockerAvailable = await docker.isDockerAvailable();
     let containers = [];
     if (dockerAvailable) {
-      containers = await docker.listContainers();
+      // includeAll so Vulhub recipe containers (named after the recipe dir,
+      // not vb-*) come back too — they're what the recipe status table below
+      // is built from.
+      containers = await docker.listContainers({ includeAll: true });
     }
 
     // Build a status map by container name
@@ -39,22 +42,43 @@ router.get('/containers', async (req, res, next) => {
     const vulhubCloned = fleet.isVulhubCloned();
     let categories = [];
     let activeRecipes = [];
+    let recipeFleet = [];
     let seededCount = 0;
     if (vulhubCloned) {
       categories = await fleet.listCategories();
-      activeRecipes = fleet.getActiveRecipes();
+      // Live Docker state is the source of truth for what's actually up; the
+      // state files vulhub.sh keeps are the fallback, so a recipe whose
+      // containers were removed out-of-band still offers a Stop to clean up.
+      recipeFleet = await fleet.getRecipeFleet(containers);
+      const live = new Set(recipeFleet.map((r) => r.target));
+      activeRecipes = [...new Set([...live, ...fleet.getActiveRecipes()])].sort();
       // Check how many vulhub labs are seeded in DB
       const [[{ cnt }]] = await pool.query("SELECT COUNT(*) AS cnt FROM labs WHERE kind='vulhub'");
       seededCount = cnt;
     }
 
-    // Vulhub containers currently running (not in builtin/infra)
+    // Keyed by target so the per-category recipe rows can show live status
+    // without a second pass over the container list.
+    const recipeStatus = {};
+    for (const r of recipeFleet) recipeStatus[r.target] = r;
+
+    // Anything left over: not builtin, not infra, and not traceable to a
+    // recipe (a hand-started container, or one whose recipe was deleted).
     const knownNames = new Set([
       ...fleet.BUILTIN_SERVICES.map((s) => s.container),
       ...fleet.INFRA_SERVICES.map((s) => s.container),
       'vb-dashboard', 'vb-dashboard-db',
     ]);
-    const vulhubContainers = containers.filter((c) => !knownNames.has(c.name));
+    const recipeContainerNames = new Set(
+      recipeFleet.flatMap((r) => r.containers.map((c) => c.name))
+    );
+    // Same address treatment as the recipe rows — these are the containers
+    // someone started outside the dashboard, so where to reach them is the
+    // main thing the page can tell you about them. On a user-defined network
+    // the container name resolves, so that's the host to show.
+    const otherContainers = containers
+      .filter((c) => !knownNames.has(c.name) && !recipeContainerNames.has(c.name))
+      .map((c) => ({ ...c, host: c.name, endpoints: fleet.buildEndpoints(c.name, c) }));
 
     res.render('containers', {
       dockerAvailable,
@@ -63,7 +87,9 @@ router.get('/containers', async (req, res, next) => {
       vulhubCloned,
       categories,
       activeRecipes,
-      vulhubContainers,
+      recipeFleet,
+      recipeStatus,
+      otherContainers,
       seededCount,
       flash: req.query.flash || null,
     });
@@ -240,7 +266,7 @@ router.get('/api/containers', async (req, res, next) => {
   try {
     const available = await docker.isDockerAvailable();
     if (!available) return res.json({ error: 'Docker not available', containers: [] });
-    const containers = await docker.listContainers();
+    const containers = await docker.listContainers({ includeAll: true });
     res.json({ containers });
   } catch (err) {
     next(err);

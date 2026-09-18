@@ -11,9 +11,12 @@ VULHUB_ALL_STATE_FILE=.vulhub-all-active
 # vb-attack-box still exists — tearing down a recipe disconnects it from
 # vb-attack-box's networks first, which needs the container to still be there.
 if [[ -f "$VULHUB_STATE_FILE" ]]; then
-  recipe=$(cat "$VULHUB_STATE_FILE")
-  echo "Tearing down active Vulhub recipe: $recipe"
-  ./vulhub.sh down "$recipe" || echo "WARNING: failed to tear down $recipe cleanly — check it by hand." >&2
+  # One recipe per line — the dashboard can have deployed several individually.
+  while IFS= read -r recipe; do
+    [[ -n "$recipe" ]] || continue
+    echo "Tearing down active Vulhub recipe: $recipe"
+    ./vulhub.sh down "$recipe" || echo "WARNING: failed to tear down $recipe cleanly — check it by hand." >&2
+  done < "$VULHUB_STATE_FILE"
   rm -f "$VULHUB_STATE_FILE"
 fi
 

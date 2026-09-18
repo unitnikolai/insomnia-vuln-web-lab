@@ -29,17 +29,43 @@
           if (status) status.textContent = c ? c.status : 'Not created';
           if (ip) {
             ip.textContent = (c && c.ip) ? c.ip : '—';
-            if (c && c.networks && c.networks.length) {
-              ip.title = c.networks.map(n => n.network + ': ' + n.ip).join('\n');
+            const named = (c && c.networks || []).filter(n => n.ip);
+            if (named.length) {
+              ip.title = named.map(n => n.network + ': ' + n.ip).join('\n');
             } else {
               ip.removeAttribute('title');
             }
           }
+          const ports = el.querySelector('.container-ports');
+          if (ports) ports.innerHTML = renderPorts(c, ports.dataset.host);
         });
       })
       .catch(() => {});
   }
   setInterval(refreshStatus, 5000);
+
+  // Same shape the server renders on first paint: "<hostname>:<port>" is the
+  // address to hit from the attack box, with the loopback binding after it
+  // when the recipe published one to the host.
+  function renderPorts(c, host) {
+    if (!c || !c.ports || !c.ports.length) return '<span class="muted">—</span>';
+    const tcp = c.ports.filter(p => !p.type || p.type === 'tcp');
+    if (!tcp.length) return '<span class="muted">—</span>';
+    return tcp.map(p => {
+      let out = '<span class="endpoint">' + esc(host || '') + ':' + p.private + '</span>';
+      if (p.public) {
+        const bind = (p.ip && p.ip !== '0.0.0.0' && p.ip !== '::') ? p.ip : '127.0.0.1';
+        out += ' <span class="muted">host ' + esc(bind) + ':' + p.public + '</span>';
+      }
+      return out;
+    }).join('<br>');
+  }
+
+  function esc(v) {
+    return String(v).replace(/[&<>"']/g, ch => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+    ));
+  }
 
   function toggleCategory(name) {
     const el = document.getElementById('cat-' + name);
@@ -60,7 +86,7 @@
         <td><strong><%= lab.name %></strong></td>
         <td class="mono"><%= lab.container %></td>
         <td class="status-text"><%= lab.container_status ? lab.container_status.status : 'Not created' %></td>
-        <td class="mono container-ip" <% if (lab.container_status && lab.container_status.networks && lab.container_status.networks.length) { %>title="<%= lab.container_status.networks.map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= lab.container_status && lab.container_status.ip ? lab.container_status.ip : '—' %></td>
+        <td class="mono container-ip" <% if (lab.container_status && lab.container_status.networks && lab.container_status.networks.some(n => n.ip)) { %>title="<%= lab.container_status.networks.filter(n => n.ip).map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= lab.container_status && lab.container_status.ip ? lab.container_status.ip : '—' %></td>
         <td class="actions">
           <% if (lab.container_status && lab.container_status.state === 'running') { %>
             <form method="post" action="/containers/builtin/<%= lab.service %>/stop" class="inline-form">
@@ -93,7 +119,7 @@
         <td><strong><%= svc.name %></strong></td>
         <td class="mono"><%= svc.container %></td>
         <td class="status-text"><%= svc.container_status ? svc.container_status.status : 'Not created' %></td>
-        <td class="mono container-ip" <% if (svc.container_status && svc.container_status.networks && svc.container_status.networks.length) { %>title="<%= svc.container_status.networks.map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= svc.container_status && svc.container_status.ip ? svc.container_status.ip : '—' %></td>
+        <td class="mono container-ip" <% if (svc.container_status && svc.container_status.networks && svc.container_status.networks.some(n => n.ip)) { %>title="<%= svc.container_status.networks.filter(n => n.ip).map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= svc.container_status && svc.container_status.ip ? svc.container_status.ip : '—' %></td>
         <td class="actions">
           <% if (svc.container_status && svc.container_status.state === 'running') { %>
             <form method="post" action="/containers/builtin/<%= svc.service %>/stop" class="inline-form">
@@ -112,6 +138,99 @@
     <% }) %>
   </tbody>
 </table>
+
+<!-- ══════════ Deployed Vulhub recipes ══════════ -->
+<%
+  // Tracked by vulhub.sh but with nothing left running — offer a Stop anyway
+  // so the state file and any leftover network can be cleaned up.
+  const staleRecipes = activeRecipes.filter(t => !recipeStatus[t]);
+%>
+<% if (recipeFleet.length > 0 || staleRecipes.length > 0) { %>
+  <h2>Deployed Vulhub recipes</h2>
+  <p class="subtitle">
+    Every recipe you've deployed, with the address each service answers on.
+    Reach these from inside the attack box by the name in <strong>Reachable at</strong> —
+    for a batch-deployed recipe that unique alias is the only safe name, since
+    the attack box sits on every recipe's network at once and bare service
+    names collide.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th></th><th>Recipe</th><th>CVE</th><th>Service</th>
+        <th>Status</th><th>IP</th><th>Reachable at</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% recipeFleet.forEach(r => { %>
+        <% r.containers.forEach((c, i) => { %>
+          <tr data-container="<%= c.name %>">
+            <td><span class="status-dot <%= c.state %>"></span></td>
+            <% if (i === 0) { %>
+              <td rowspan="<%= r.total %>">
+                <strong class="mono"><%= r.target %></strong>
+                <% if (r.state === 'partial') { %>
+                  <span class="badge medium" style="margin-left:6px"><%= r.running %>/<%= r.total %> up</span>
+                <% } %>
+                <div style="margin-top:6px">
+                  <form method="post" action="/containers/vulhub/recipe/down" class="inline-form"
+                        style="margin-left:0">
+                    <input type="hidden" name="target" value="<%= r.target %>">
+                    <button type="submit" class="btn btn-stop btn-sm">&#9632; Stop recipe</button>
+                  </form>
+                </div>
+              </td>
+              <td class="mono" rowspan="<%= r.total %>"><%= r.cve || '—' %></td>
+            <% } %>
+            <td class="mono"><%= c.service %></td>
+            <td class="status-text"><%= c.status %></td>
+            <td class="mono container-ip"
+                <% if (c.networks && c.networks.some(n => n.ip)) { %>title="<%= c.networks.filter(n => n.ip).map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= c.ip ? c.ip : '—' %></td>
+            <td class="mono container-ports" data-host="<%= c.host %>">
+              <% if (c.endpoints && c.endpoints.length) { %>
+                <% c.endpoints.forEach((e, j) => { %>
+                  <% if (j > 0) { %><br><% } %>
+                  <span class="endpoint"><%= e.addr %></span>
+                  <% if (e.published) { %><span class="muted">host <%= e.published %></span><% } %>
+                <% }) %>
+              <% } else { %>
+                <span class="muted">—</span>
+              <% } %>
+            </td>
+            <td class="actions">
+              <% if (c.state === 'running') { %>
+                <form method="post" action="/containers/<%= c.name %>/stop" class="inline-form">
+                  <button type="submit" class="btn btn-stop btn-sm">&#9632; Stop</button>
+                </form>
+                <form method="post" action="/containers/<%= c.name %>/restart" class="inline-form">
+                  <button type="submit" class="btn btn-restart btn-sm">&#8635; Restart</button>
+                </form>
+              <% } else { %>
+                <form method="post" action="/containers/<%= c.name %>/start" class="inline-form">
+                  <button type="submit" class="btn btn-start btn-sm">&#9654; Start</button>
+                </form>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      <% }) %>
+      <% staleRecipes.forEach(target => { %>
+        <tr>
+          <td><span class="status-dot exited"></span></td>
+          <td><strong class="mono"><%= target %></strong></td>
+          <td class="mono"><% const m = target.match(/CVE-\d{4}-\d{4,7}/i); %><%= m ? m[0].toUpperCase() : '—' %></td>
+          <td class="muted" colspan="4">Tracked as active, but no containers are left — stop it to clean up.</td>
+          <td class="actions">
+            <form method="post" action="/containers/vulhub/recipe/down" class="inline-form">
+              <input type="hidden" name="target" value="<%= target %>">
+              <button type="submit" class="btn btn-stop btn-sm">&#9632; Stop</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+<% } %>
 
 <!-- ══════════ Vulhub ══════════ -->
 <h2>Vulhub CVE recipes</h2>
@@ -146,8 +265,8 @@
       <span class="metric-val a" style="display:block"><%= activeRecipes.length %></span>
     </div>
     <div class="metric-card">
-      <span class="metric-label">Vulhub containers</span>
-      <span class="metric-val a" style="display:block"><%= vulhubContainers.filter(c => c.state === 'running').length %></span>
+      <span class="metric-label">Recipe containers</span>
+      <span class="metric-val a" style="display:block"><%= recipeFleet.reduce((n, r) => n + r.running, 0) %></span>
     </div>
   </div>
 
@@ -191,16 +310,41 @@
     <div id="cat-<%= cat.name %>" class="category-recipes hidden">
       <table>
         <thead>
-          <tr><th></th><th>Recipe</th><th>CVE</th><th>Actions</th></tr>
+          <tr><th></th><th>Recipe</th><th>CVE</th><th>Status</th><th>IP</th><th>Reachable at</th><th>Actions</th></tr>
         </thead>
         <tbody>
           <% cat.recipes.forEach(recipe => { %>
-            <% const isActive = activeRecipes.includes(recipe); %>
+            <% const live = recipeStatus[recipe]; %>
+            <% const isActive = !!live || activeRecipes.includes(recipe); %>
             <% const cveMatch = recipe.match(/CVE-\d{4}-\d{4,7}/i); %>
             <tr>
-              <td><span class="status-dot <%= isActive ? 'running' : 'exited' %>"></span></td>
+              <td><span class="status-dot <%= live ? live.state : (isActive ? 'created' : 'exited') %>"></span></td>
               <td class="mono"><%= recipe %></td>
               <td class="mono"><%= cveMatch ? cveMatch[0].toUpperCase() : '—' %></td>
+              <td>
+                <% if (live) { %>
+                  <%= live.running %>/<%= live.total %> container<%= live.total === 1 ? '' : 's' %> up
+                <% } else if (isActive) { %>
+                  <span class="muted">tracked, no containers</span>
+                <% } else { %>
+                  <span class="muted">not deployed</span>
+                <% } %>
+              </td>
+              <td class="mono">
+                <% if (live) { %>
+                  <%= live.containers.map(c => c.ip).filter(Boolean).join(', ') || '—' %>
+                <% } else { %>—<% } %>
+              </td>
+              <td class="mono">
+                <% if (live) { %>
+                  <% const addrs = live.containers.flatMap(c => c.endpoints.map(e => e.addr)); %>
+                  <% if (addrs.length) { %>
+                    <%- addrs.map(a => '<span class="endpoint">' + a + '</span>').join('<br>') %>
+                  <% } else { %>
+                    <%= live.containers.map(c => c.host).join(', ') %>
+                  <% } %>
+                <% } else { %>—<% } %>
+              </td>
               <td class="actions">
                 <% if (isActive) { %>
                   <form method="post" action="/containers/vulhub/recipe/down" class="inline-form">
@@ -221,25 +365,40 @@
     </div>
   <% }) %>
 
-  <!-- Running vulhub containers -->
-  <% if (vulhubContainers.length > 0) { %>
-    <h3 style="margin-top:24px">Running Vulhub containers (<%= vulhubContainers.filter(c => c.state === 'running').length %>)</h3>
+  <!-- Containers that couldn't be traced back to a recipe -->
+  <% if (otherContainers.length > 0) { %>
+    <h3 style="margin-top:24px">Other containers (<%= otherContainers.filter(c => c.state === 'running').length %> running)</h3>
+    <p class="subtitle">Not a builtin lab, not infrastructure, and not traceable to a Vulhub recipe — started by hand, or left over from a recipe that's since been removed.</p>
     <table>
       <thead>
-        <tr><th></th><th>Container</th><th>Image</th><th>Status</th><th>IP</th><th>Actions</th></tr>
+        <tr><th></th><th>Container</th><th>Image</th><th>Status</th><th>IP</th><th>Reachable at</th><th>Actions</th></tr>
       </thead>
       <tbody>
-        <% vulhubContainers.forEach(c => { %>
+        <% otherContainers.forEach(c => { %>
           <tr data-container="<%= c.name %>">
             <td><span class="status-dot <%= c.state %>"></span></td>
             <td class="mono"><%= c.name %></td>
             <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><%= c.image %></td>
             <td class="status-text"><%= c.status %></td>
-            <td class="mono container-ip" <% if (c.networks && c.networks.length) { %>title="<%= c.networks.map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= c.ip ? c.ip : '—' %></td>
+            <td class="mono container-ip" <% if (c.networks && c.networks.some(n => n.ip)) { %>title="<%= c.networks.filter(n => n.ip).map(n => n.network + ': ' + n.ip).join('\n') %>"<% } %>><%= c.ip ? c.ip : '—' %></td>
+            <td class="mono container-ports" data-host="<%= c.host %>">
+              <% if (c.endpoints && c.endpoints.length) { %>
+                <% c.endpoints.forEach((e, j) => { %>
+                  <% if (j > 0) { %><br><% } %>
+                  <span class="endpoint"><%= e.addr %></span>
+                  <% if (e.published) { %><span class="muted">host <%= e.published %></span><% } %>
+                <% }) %>
+              <% } else { %>
+                <span class="muted">—</span>
+              <% } %>
+            </td>
             <td class="actions">
               <% if (c.state === 'running') { %>
                 <form method="post" action="/containers/<%= c.name %>/stop" class="inline-form">
                   <button type="submit" class="btn btn-stop btn-sm">&#9632; Stop</button>
+                </form>
+                <form method="post" action="/containers/<%= c.name %>/restart" class="inline-form">
+                  <button type="submit" class="btn btn-restart btn-sm">&#8635; Restart</button>
                 </form>
               <% } else { %>
                 <form method="post" action="/containers/<%= c.name %>/start" class="inline-form">

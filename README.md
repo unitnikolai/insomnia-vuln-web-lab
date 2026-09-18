@@ -202,18 +202,22 @@ rewrites any bare port publish in that recipe's `docker-compose.yml` to bind
 `127.0.0.1` only, generates a `docker-compose.vulnbench-override.yml` in the
 recipe's directory that joins every service to the `vulnbench` network — same
 rule as every other target in this lab — then brings it up, *after* the base
-fleet so `vulnbench` already exists. The active recipe name is tracked in the
-gitignored `.vulhub-active`, so `./down.sh` tears it down automatically along
-with everything else — no separate step to remember.
+fleet so `vulnbench` already exists. Each recipe brought up this way is
+appended to the gitignored `.vulhub-active` (one per line), so `./down.sh`
+tears them all down automatically along with everything else — no separate
+step to remember. `./vulhub.sh down <recipe>` drops just that one line and
+leaves the others tracked.
 
 The port rewrite handles the common `"HOST:CONTAINER"` and `IP:HOST:CONTAINER`
 forms; anything unusual (protocol suffixes, port ranges) is left alone and
 printed so you can check it by hand before treating the recipe as safe.
 
-Only one recipe at a time this way: many share default ports and a bare
-`web`/`db` service name, so they collide with each other when joined to the
-same `vulnbench` network. To swap to a different CVE without tearing down the
-whole fleet, use `vulhub.sh` directly — it keeps `.vulhub-active` (and
+Best kept to one recipe at a time this way: many share default ports and a
+bare `web`/`db` service name, so they collide with each other when joined to
+the same `vulnbench` network. (Nothing stops you from bringing up several —
+they all stay tracked — but batch mode below is the right tool once you want
+more than a couple at once.) To swap to a different CVE without tearing down
+the whole fleet, use `vulhub.sh` directly — it keeps `.vulhub-active` (and
 therefore what `./down.sh` will clean up) in sync:
 
 ```bash

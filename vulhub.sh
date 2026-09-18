@@ -309,7 +309,10 @@ case "$cmd" in
     echo "Joining vulnbench network..."
     write_network_override "$dir"
     ( cd "$dir" && docker compose -f docker-compose.yml -f "$OVERRIDE_FILE" up -d )
-    echo "$target" > "$STATE_FILE"
+    # Append (de-duplicated) rather than overwrite: the dashboard gives every
+    # recipe its own Deploy button, so several can be up at once and each one
+    # has to stay tracked or ./down.sh leaks the ones it never recorded.
+    grep -qxF "$target" "$STATE_FILE" 2>/dev/null || echo "$target" >> "$STATE_FILE"
     echo
     echo "======================================================================"
     echo " $target is up."
@@ -329,14 +332,24 @@ case "$cmd" in
     [[ $# -ge 1 ]] || usage
     target="$1"
     dir="$(recipe_dir "$target")"
+    # The override file is written by both isolation models, so composing it
+    # down covers a recipe brought up either way. The network disconnect is a
+    # no-op unless this recipe came up in batch mode (own vulhub-<slug> net).
+    docker network disconnect "vulhub-$(slugify "$target")" "$ATTACK_BOX" 2>/dev/null || true
     if [[ -f "$dir/$OVERRIDE_FILE" ]]; then
       ( cd "$dir" && docker compose -f docker-compose.yml -f "$OVERRIDE_FILE" down )
     else
       ( cd "$dir" && docker compose down )
     fi
-    if [[ -f "$STATE_FILE" && "$(cat "$STATE_FILE")" == "$target" ]]; then
-      rm -f "$STATE_FILE"
-    fi
+    # Drop it from whichever state file was tracking it, leaving the other
+    # recipes listed there alone.
+    for state in "$STATE_FILE" "$ALL_STATE_FILE"; do
+      [[ -f "$state" ]] || continue
+      tmp="$(mktemp)"
+      grep -vxF "$target" "$state" > "$tmp" || true
+      mv "$tmp" "$state"
+      [[ -s "$state" ]] || rm -f "$state"
+    done
     ;;
 
   categories)

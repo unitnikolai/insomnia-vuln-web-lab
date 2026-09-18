@@ -5,10 +5,12 @@ docker compose ps
 
 VULHUB_STATE_FILE=.vulhub-active
 if [[ -f "$VULHUB_STATE_FILE" ]]; then
-  recipe=$(cat "$VULHUB_STATE_FILE")
-  echo
-  echo "Active Vulhub recipe: $recipe"
-  ( cd "vulhub/$recipe" && docker compose -f docker-compose.yml -f docker-compose.vulnbench-override.yml ps )
+  while IFS= read -r recipe; do
+    [[ -n "$recipe" ]] || continue
+    echo
+    echo "Active Vulhub recipe: $recipe"
+    ( cd "vulhub/$recipe" && docker compose -f docker-compose.yml -f docker-compose.vulnbench-override.yml ps )
+  done < "$VULHUB_STATE_FILE"
 fi
 
 if [[ -f .vulhub-all-active ]]; then
